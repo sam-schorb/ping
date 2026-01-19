@@ -1,0 +1,3 @@
+[submodule "dough"]
+	path = dough
+	url = https://codeberg.org/uzu/dough.git
