@@ -825,7 +825,10 @@ test("editor sidebar spans the full editor height and scrolls internally", async
     assert.match(styles, /\.ping-editor__sidebar\s*\{[\s\S]*overflow:\s*visible;/);
     assert.match(styles, /\.ping-editor__sidebar-content\s*\{[\s\S]*overflow:\s*hidden;/);
     assert.match(styles, /\.ping-editor__panel-scroll\s*\{[\s\S]*overflow:\s*auto;/);
-    assert.match(styles, /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor\s*\{[\s\S]*gap:\s*18px;/);
+    assert.doesNotMatch(
+      styles,
+      /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor\s*\{[\s\S]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+auto;[\s\S]*gap:\s*18px;/,
+    );
     assert.match(styles, /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__sidebar\s*\{[\s\S]*position:\s*relative;/);
     assert.match(styles, /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__sidebar-toggle,\s*\.ping-editor__sidebar\.is-collapsed \.ping-editor__sidebar-toggle\s*\{[\s\S]*top:\s*0;/);
     assert.match(styles, /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__sidebar-toggle-icon\s*\{[\s\S]*transform:\s*rotate\(90deg\);/);

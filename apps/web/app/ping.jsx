@@ -56,14 +56,7 @@ function pushHistoryEntry(entries, entry) {
   return [...entries, entry].slice(-GRAPH_HISTORY_LIMIT);
 }
 
-function traceAudio(message, details) {
-  if (details === undefined) {
-    console.log(`[ping-audio] ${message}`);
-    return;
-  }
-
-  console.log(`[ping-audio] ${message}`, details);
-}
+function traceAudio() {}
 
 function instrumentDough(dough) {
   if (!dough || dough.__pingInstrumented) {
@@ -984,12 +977,6 @@ export function Ping() {
             }
           },
           logger: {
-            log(message, details) {
-              console.log(message, details);
-            },
-            debug(message, details) {
-              console.log(message, details);
-            },
             warn(message, details) {
               console.warn(message, details);
             },

@@ -1519,13 +1519,6 @@ function createStyles(config) {
         font-weight: ${config.text.fontWeight};
       }
       @media (max-width: 1180px) {
-        .ping-editor {
-          grid-template-rows: minmax(0, 1fr) auto;
-          gap: 18px;
-        }
-        .ping-editor__layout {
-          height: auto;
-        }
         .ping-editor__viewport-shell {
           min-height: clamp(480px, 72vw, 640px);
         }

@@ -126,17 +126,6 @@ export function createAudioBridge(opts) {
   let lastClockT1 = Number.NaN;
   let sampleLoadPromise = Promise.resolve();
 
-  function debug(message, details) {
-    if (typeof logger?.debug === "function") {
-      logger.debug(`[audio-bridge] ${message}`, details);
-      return;
-    }
-
-    if (typeof logger?.log === "function") {
-      logger.log(`[audio-bridge] ${message}`, details);
-    }
-  }
-
   function publishWarnings(warnings) {
     for (const warning of warnings) {
       onWarning?.(warning);
@@ -158,20 +147,9 @@ export function createAudioBridge(opts) {
 
   async function reloadSamples() {
     sampleLoadPromise = (async () => {
-      debug("reloadSamples:start", {
-        slotCount: slots.length,
-        slots,
-      });
-
       try {
         await loadSamples(slots);
-        debug("reloadSamples:done", {
-          slotCount: slots.length,
-        });
       } catch (error) {
-        debug("reloadSamples:error", {
-          message: error?.message ?? "unknown error",
-        });
         publishWarnings([
           createAudioWarning(
             AUDIO_WARNING_CODES.DOH_EVAL_FAIL,
@@ -194,12 +172,6 @@ export function createAudioBridge(opts) {
     if (!started || !clockWindow?.clock) {
       return;
     }
-
-    debug("clockWindow", {
-      clockWindow,
-      transport,
-      metrics: snapshotAudioMetrics(metrics),
-    });
 
     const warningBucket = createWarningBucket();
 
@@ -227,21 +199,8 @@ export function createAudioBridge(opts) {
     const batchCap = resolveAudioBatchCap(dough);
     let scheduledThisWindow = 0;
 
-    debug("runtime.queryWindow", {
-      tStartTick,
-      tEndTick,
-      runtimeEventCount: runtimeEvents.length,
-      runtimeEvents,
-      batchCap,
-    });
-
     for (const group of groupEventsByTick(runtimeEvents)) {
       if (!(group.tick > metrics.lastScheduledTick)) {
-        debug("group:skipped-watermark", {
-          groupTick: group.tick,
-          lastScheduledTick: metrics.lastScheduledTick,
-          eventCount: group.events.length,
-        });
         continue;
       }
 
@@ -257,26 +216,11 @@ export function createAudioBridge(opts) {
         });
 
         if (!doughEvent) {
-          debug("event:dropped-null-mapping", {
-            runtimeEvent,
-          });
           continue;
         }
 
-        debug("event:mapped", {
-          runtimeEvent,
-          doughEvent,
-          clockT1: clockWindow.t1,
-          leadTimeSec: doughEvent.time - clockWindow.t1,
-        });
-
         if (!(doughEvent.time > clockWindow.t1)) {
           metrics.droppedLate += 1;
-          debug("event:dropped-late", {
-            runtimeEvent,
-            doughEvent,
-            clockT1: clockWindow.t1,
-          });
           warningBucket.warn(
             AUDIO_WARNING_CODES.LATE_EVENT,
             `Dropped a late audio event at tick ${runtimeEvent.tick}.`,
@@ -286,12 +230,6 @@ export function createAudioBridge(opts) {
 
         if (scheduledThisWindow >= batchCap || isOversizeDoughEvent(dough, doughEvent)) {
           metrics.droppedOverflow += 1;
-          debug("event:dropped-overflow", {
-            runtimeEvent,
-            doughEvent,
-            scheduledThisWindow,
-            batchCap,
-          });
           warningBucket.warn(
             AUDIO_WARNING_CODES.DROPPED_OVERFLOW,
             "Dropped audio events because the Dough submission window is full.",
@@ -303,18 +241,7 @@ export function createAudioBridge(opts) {
           await dough.evaluate(doughEvent);
           scheduledThisWindow += 1;
           metrics.scheduled += 1;
-          debug("event:scheduled", {
-            runtimeEvent,
-            doughEvent,
-            scheduledThisWindow,
-            metrics: snapshotAudioMetrics(metrics),
-          });
         } catch (error) {
-          debug("event:evaluate-error", {
-            runtimeEvent,
-            doughEvent,
-            message: error?.message ?? "unknown error",
-          });
           warningBucket.warn(
             AUDIO_WARNING_CODES.DOH_EVAL_FAIL,
             `Failed to schedule a Dough event: ${error?.message ?? "unknown error"}.`,
@@ -323,18 +250,8 @@ export function createAudioBridge(opts) {
       }
 
       metrics.lastScheduledTick = group.tick;
-      debug("group:completed", {
-        groupTick: group.tick,
-        scheduledThisWindow,
-        lastScheduledTick: metrics.lastScheduledTick,
-      });
     }
 
-    debug("clockWindow:complete", {
-      clockWindow,
-      metrics: snapshotAudioMetrics(metrics),
-      scheduledThisWindow,
-    });
     publishWarnings(warningBucket.flush());
   }
 
@@ -344,14 +261,9 @@ export function createAudioBridge(opts) {
     }
 
     attachPromise = (async () => {
-      debug("attachClockListener:await-ready");
-
       try {
         await Promise.resolve(dough.ready);
       } catch (error) {
-        debug("attachClockListener:ready-error", {
-          message: error?.message ?? "unknown error",
-        });
         publishWarnings([
           createAudioWarning(
             AUDIO_WARNING_CODES.DOH_EVAL_FAIL,
@@ -368,7 +280,6 @@ export function createAudioBridge(opts) {
       const port = dough.worklet?.port;
 
       if (!port) {
-        debug("attachClockListener:no-port");
         publishWarnings([
           createAudioWarning(
             AUDIO_WARNING_CODES.DOH_EVAL_FAIL,
@@ -379,9 +290,6 @@ export function createAudioBridge(opts) {
       }
 
       previousClockHandler = port.onmessage;
-      debug("attachClockListener:attached", {
-        hadPreviousClockHandler: typeof previousClockHandler === "function",
-      });
       port.onmessage = async (event) => {
         if (typeof previousClockHandler === "function") {
           await previousClockHandler(event);
@@ -402,24 +310,15 @@ export function createAudioBridge(opts) {
   return {
     start() {
       if (started) {
-        debug("start:noop-already-started");
         return;
       }
 
       slots = normalizeAudioSlots(opts.getSlots?.());
       started = true;
-      debug("start", {
-        transport,
-        config,
-        slots,
-      });
       void reloadSamples();
       void attachClockListener();
     },
     stop() {
-      debug("stop", {
-        metrics: snapshotAudioMetrics(metrics),
-      });
       started = false;
       lastClockT1 = Number.NaN;
 
@@ -433,12 +332,6 @@ export function createAudioBridge(opts) {
     updateTransport(nextTransport) {
       const normalized = normalizeTransport(nextTransport, transport);
       const changed = !isSameTransport(transport, normalized);
-
-      debug("updateTransport", {
-        previousTransport: transport,
-        nextTransport: normalized,
-        changed,
-      });
       transport = normalized;
 
       if (changed) {
@@ -447,16 +340,10 @@ export function createAudioBridge(opts) {
     },
     updateSlots(nextSlots) {
       slots = normalizeAudioSlots(nextSlots ?? opts.getSlots?.());
-      debug("updateSlots", {
-        slots,
-      });
       void reloadSamples();
     },
     updateConfig(nextConfig) {
       config = normalizeAudioConfig(nextConfig);
-      debug("updateConfig", {
-        config,
-      });
     },
     getMetrics() {
       return snapshotAudioMetrics(metrics);
