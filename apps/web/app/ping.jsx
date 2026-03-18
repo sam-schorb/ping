@@ -6,6 +6,7 @@ import {
   buildRegistryIndex,
   createAudioBridge,
   createCompiledGraphPatch,
+  createDoughSampleMap,
   createProjectRoutingCache,
   createDefaultSampleSlots,
   DEFAULT_TEMPO_BPM,
@@ -19,7 +20,7 @@ import {
   validateGraph,
 } from "@ping/core";
 import { Editor } from "@ping/ui/react";
-import { Dough } from "dough-synth/dough.js";
+import { Dough, doughsamples } from "dough-synth/dough.js";
 import { startTransition, useEffect, useRef, useState } from "react";
 
 const REGISTRY_INDEX = buildRegistryIndex();
@@ -385,6 +386,15 @@ export function Ping() {
     return performance.now() / 1000;
   }
 
+  async function syncDoughSampleSlots(nextSlots = slotsRef.current) {
+    const sampleMap = createDoughSampleMap(nextSlots);
+    await doughsamples(sampleMap, "");
+    traceAudio("syncDoughSampleSlots:done", {
+      slotCount: nextSlots?.length ?? 0,
+      sampleKeys: Object.keys(sampleMap),
+    });
+  }
+
   function createBridgeTransport() {
     const transport = transportRef.current;
 
@@ -640,6 +650,10 @@ export function Ping() {
         return;
       }
 
+      await syncDoughSampleSlots(slotsRef.current);
+      traceAudio("armAudioEngine:slot-map-ready", {
+        slots: slotsRef.current,
+      });
       await preloadActiveSamples(dough);
 
       if (doughRef.current !== dough) {
@@ -932,6 +946,7 @@ export function Ping() {
           dough: doughRef.current,
           transport: createBridgeTransport() ?? undefined,
           getSlots: () => slotsRef.current,
+          loadSamples: syncDoughSampleSlots,
           onWarning(warning) {
             traceAudio("bridge:onWarning", warning);
             pushOutput({

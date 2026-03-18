@@ -15,7 +15,7 @@ import {
   resolveAudioBatchCap,
   secondsToTick,
 } from "./mapper.js";
-import { loadSlotSamples, normalizeAudioSlots } from "./samples.js";
+import { normalizeAudioSlots } from "./samples.js";
 
 function createWarningBucket() {
   const warnings = new Map();
@@ -84,9 +84,7 @@ function shouldResyncClock(previousT1, clockWindow, config) {
   return gap < -AUDIO_RESYNC_EPSILON_SEC || gap > maxExpectedGap;
 }
 
-async function defaultLoadSamples(slots) {
-  await loadSlotSamples(slots);
-}
+async function defaultLoadSamples() {}
 
 function groupEventsByTick(events) {
   const groups = [];
@@ -126,6 +124,7 @@ export function createAudioBridge(opts) {
   let attachPromise = null;
   let previousClockHandler = null;
   let lastClockT1 = Number.NaN;
+  let sampleLoadPromise = Promise.resolve();
 
   function debug(message, details) {
     if (typeof logger?.debug === "function") {
@@ -158,30 +157,40 @@ export function createAudioBridge(opts) {
   }
 
   async function reloadSamples() {
-    debug("reloadSamples:start", {
-      slotCount: slots.length,
-      slots,
-    });
-
-    try {
-      await loadSamples(slots);
-      debug("reloadSamples:done", {
+    sampleLoadPromise = (async () => {
+      debug("reloadSamples:start", {
         slotCount: slots.length,
+        slots,
       });
-    } catch (error) {
-      debug("reloadSamples:error", {
-        message: error?.message ?? "unknown error",
-      });
-      publishWarnings([
-        createAudioWarning(
-          AUDIO_WARNING_CODES.DOH_EVAL_FAIL,
-          `Failed to load sample slots: ${error?.message ?? "unknown error"}.`,
-        ),
-      ]);
-    }
+
+      try {
+        await loadSamples(slots);
+        debug("reloadSamples:done", {
+          slotCount: slots.length,
+        });
+      } catch (error) {
+        debug("reloadSamples:error", {
+          message: error?.message ?? "unknown error",
+        });
+        publishWarnings([
+          createAudioWarning(
+            AUDIO_WARNING_CODES.DOH_EVAL_FAIL,
+            `Failed to load sample slots: ${error?.message ?? "unknown error"}.`,
+          ),
+        ]);
+      }
+    })();
+
+    await sampleLoadPromise;
   }
 
   async function handleClockWindow(clockWindow) {
+    if (!started || !clockWindow?.clock) {
+      return;
+    }
+
+    await sampleLoadPromise;
+
     if (!started || !clockWindow?.clock) {
       return;
     }

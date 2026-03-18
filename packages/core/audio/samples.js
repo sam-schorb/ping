@@ -1,4 +1,3 @@
-import { doughsamples } from "../../../dough/dough.js";
 import { SAMPLE_SLOT_COUNT, createDefaultSampleSlots } from "../serialisation/errors.js";
 
 function isPlainObject(value) {
@@ -50,8 +49,4 @@ export function createDoughSampleMap(slots) {
   }
 
   return sampleMap;
-}
-
-export async function loadSlotSamples(slots, baseUrl = "") {
-  await doughsamples(createDoughSampleMap(slots), baseUrl);
 }

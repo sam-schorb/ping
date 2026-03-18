@@ -81,6 +81,41 @@ test("updateSlots reloads the Dough sample mapping without changing runtime sema
   assert.equal(sampleLoads[1][1].path, "/kits/alt/snare.wav");
 });
 
+test("audio bridge waits for sample mappings to load before scheduling clock windows", async () => {
+  const fixture = await loadAudioFixture("valid-min.json");
+  const runtime = createAudioRuntimeStub(fixture.events);
+  const dough = createFakeDough();
+  let resolveLoadSamples;
+  const loadSamplesPromise = new Promise((resolve) => {
+    resolveLoadSamples = resolve;
+  });
+  const bridge = createAudioBridge({
+    runtime,
+    registry: createRegistryApi(),
+    dough,
+    transport: fixture.transport,
+    config: fixture.config,
+    getSlots: () => createFixtureSlots(),
+    loadSamples: async () => loadSamplesPromise,
+    logger: { warn() {} },
+  });
+
+  bridge.start();
+  await flushAsyncWork();
+
+  const clockPromise = dough.emitClock(fixture.clock);
+  await flushAsyncWork();
+
+  assert.deepEqual(runtime.queries, []);
+  assert.equal(dough.calls.length, 0);
+
+  resolveLoadSamples();
+  await clockPromise;
+
+  assert.deepEqual(runtime.queries, [[1.25, 1.75]]);
+  assert.equal(dough.calls.length, 1);
+});
+
 test("audio bridge composes onto the real runtime output contract", async () => {
   const runtime = createRuntime(await loadRuntimeFixture("valid-min.json"));
   const dough = createFakeDough();
