@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "sync:dough": "node scripts/sync-dough-assets.mjs",
+    "predev": "npm run sync:dough",
     "dev": "next dev --webpack",
+    "prebuild": "npm run sync:dough",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -11,6 +14,7 @@
   "dependencies": {
     "@ping/core": "*",
     "@ping/ui": "*",
+    "dough-synth": "^0.2.0",
     "next": "16.1.3",
     "react": "19.2.3",
     "react-dom": "19.2.3"

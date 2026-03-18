@@ -19,7 +19,7 @@ import {
   validateGraph,
 } from "@ping/core";
 import { Editor } from "@ping/ui/react";
-import { Dough } from "../../../dough/dough.js";
+import { Dough } from "dough-synth/dough.js";
 import { startTransition, useEffect, useRef, useState } from "react";
 
 const REGISTRY_INDEX = buildRegistryIndex();
