@@ -185,26 +185,113 @@ test("random uses the provided RNG and clamps to the current max parameter", () 
   assert.deepEqual(highRoll.outputs, [{ value: 5 }]);
 });
 
-test("counter reset happens before the next signal pulse in the same tick", () => {
+test("counter wraps at its configured max and reapplies the new count to the incoming pulse", () => {
   const node = getNodeDefinition("counter");
-  const initialState = node.initState();
+  let state = node.initState();
   const controlResult = node.onControl(
     createBehaviorContext({
-      param: 5,
-      state: initialState,
-      pulse: { value: 2 },
+      pulse: { value: 3 },
     }),
   );
-  const signalResult = node.onSignal(
+  let result = node.onSignal(
     createBehaviorContext({
-      param: 5,
-      state: controlResult.state,
+      param: controlResult.param,
+      state,
+      pulse: {
+        value: 8,
+        speed: 6,
+        params: {
+          crush: 2,
+        },
+      },
     }),
   );
+  assert.equal(controlResult.param, 3);
+  assert.deepEqual(result.outputs, [
+    {
+      value: 1,
+      speed: 6,
+      params: {
+        crush: 2,
+      },
+    },
+  ]);
+  assert.equal(result.state.count, 1);
+  state = result.state;
 
-  assert.equal(controlResult.state.count, 5);
-  assert.deepEqual(signalResult.outputs, [{ value: 6 }]);
-  assert.equal(signalResult.state.count, 6);
+  result = node.onSignal(
+    createBehaviorContext({
+      param: controlResult.param,
+      state,
+      pulse: {
+        value: 7,
+        speed: 4,
+        params: {
+          decay: 5,
+        },
+      },
+    }),
+  );
+  assert.deepEqual(result.outputs, [
+    {
+      value: 2,
+      speed: 4,
+      params: {
+        decay: 5,
+      },
+    },
+  ]);
+  assert.equal(result.state.count, 2);
+  state = result.state;
+
+  result = node.onSignal(
+    createBehaviorContext({
+      param: controlResult.param,
+      state,
+      pulse: {
+        value: 6,
+        speed: 8,
+        params: {
+          pitch: 2,
+        },
+      },
+    }),
+  );
+  assert.deepEqual(result.outputs, [
+    {
+      value: 3,
+      speed: 8,
+      params: {
+        pitch: 2,
+      },
+    },
+  ]);
+  assert.equal(result.state.count, 3);
+  state = result.state;
+
+  result = node.onSignal(
+    createBehaviorContext({
+      param: controlResult.param,
+      state,
+      pulse: {
+        value: 5,
+        speed: 3,
+        params: {
+          hpf: 7,
+        },
+      },
+    }),
+  );
+  assert.deepEqual(result.outputs, [
+    {
+      value: 1,
+      speed: 3,
+      params: {
+        hpf: 7,
+      },
+    },
+  ]);
+  assert.equal(result.state.count, 1);
 });
 
 test("block stores the most recent control parity and gates the next signal accordingly", () => {

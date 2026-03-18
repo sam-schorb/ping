@@ -164,19 +164,32 @@ export function createCounterState() {
   };
 }
 
-export function counterControl(ctx) {
-  return {
-    state: replaceState(ctx.state, {
-      count: clampDiscreteNodeValue(ctx.param),
-    }),
-  };
+function normalizeCounterCount(rawCount, maxValue) {
+  let count = Number.isFinite(rawCount) ? Math.trunc(rawCount) : 0;
+
+  if (count < 0) {
+    count = 0;
+  }
+
+  if (count > maxValue) {
+    count %= maxValue;
+  }
+
+  return count;
 }
 
 export function counterSignal(ctx) {
-  const nextCount = clampDiscreteNodeValue((ctx.state?.count ?? 0) + 1);
+  const maxValue = clampDiscreteNodeValue(ctx.param, 8);
+  const count = normalizeCounterCount(ctx.state?.count, maxValue);
+  const nextCount = count >= maxValue ? 1 : count + 1;
 
   return {
-    outputs: [createOutput(nextCount)],
+    outputs: [
+      createOutput(nextCount, {
+        speed: ctx.pulse.speed,
+        params: ctx.pulse.params,
+      }),
+    ],
     state: replaceState(ctx.state, { count: nextCount }),
   };
 }

@@ -1,13 +1,22 @@
 {
   "nodes": [
     {
-      "id": "node-reset",
+      "id": "node-control-source",
       "type": "pulse",
       "param": 1,
       "state": {},
       "inputs": 1,
       "outputs": 1,
       "controlPorts": 1
+    },
+    {
+      "id": "node-control-value",
+      "type": "const2",
+      "param": 1,
+      "state": {},
+      "inputs": 1,
+      "outputs": 1,
+      "controlPorts": 0
     },
     {
       "id": "node-source",
@@ -22,7 +31,7 @@
       "id": "node-counter",
       "type": "counter",
       "param": 5,
-      "state": { "count": 0 },
+      "state": { "count": 4 },
       "inputs": 1,
       "outputs": 1,
       "controlPorts": 1
@@ -39,11 +48,18 @@
   ],
   "edges": [
     {
+      "id": "edge-control-source",
+      "from": { "nodeId": "node-control-source", "portSlot": 0 },
+      "to": { "nodeId": "node-control-value", "portSlot": 0 },
+      "role": "signal",
+      "delay": 0.25
+    },
+    {
       "id": "edge-control",
-      "from": { "nodeId": "node-reset", "portSlot": 0 },
+      "from": { "nodeId": "node-control-value", "portSlot": 0 },
       "to": { "nodeId": "node-counter", "portSlot": 1 },
       "role": "control",
-      "delay": 0.5
+      "delay": 0.25
     },
     {
       "id": "edge-signal",

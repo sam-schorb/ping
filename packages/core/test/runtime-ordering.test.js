@@ -10,14 +10,15 @@ test("runtime applies control events before signals at the same node and tick", 
   assert.deepEqual(runtime.queryWindow(0, 1), [
     {
       tick: 0.75,
-      value: 6,
+      value: 1,
       nodeId: "node-output",
       edgeId: "edge-out",
     },
   ]);
+  assert.equal(runtime.graph.nodes[runtime.graph.nodeIndex.get("node-counter")].param, 2);
   assert.equal(
     runtime.graph.nodes[runtime.graph.nodeIndex.get("node-counter")].state.count,
-    6,
+    1,
   );
 });
 
