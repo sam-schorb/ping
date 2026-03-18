@@ -97,9 +97,18 @@ export function Editor({
     editor.setSelection(selection);
     editor.setHistory?.({ canUndo, canRedo });
     editor.setSlots?.(slots);
-    editor.setTempo?.(tempo);
     editor.setSidebarExtensions?.(sidebarExtensions);
-  }, [canRedo, canUndo, diagnostics, palette, routes, selection, sidebarExtensions, slots, snapshot, tempo]);
+  }, [canRedo, canUndo, diagnostics, palette, routes, selection, sidebarExtensions, slots, snapshot]);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
+    editor.setTempo?.(tempo);
+  }, [tempo]);
 
   return <div ref={hostRef} style={{ height: "100%", minHeight: 0 }} />;
 }

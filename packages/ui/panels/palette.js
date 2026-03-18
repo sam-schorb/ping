@@ -22,6 +22,20 @@ function normalizeCategoryId(label) {
     .replaceAll(/^-+|-+$/g, "") || "other";
 }
 
+function getCategoryDisplayLabel(category) {
+  const normalized = String(category ?? "").trim().toLowerCase();
+
+  if (normalized === "constants") {
+    return "consts";
+  }
+
+  if (normalized === "modifiers") {
+    return "mods";
+  }
+
+  return normalized;
+}
+
 function createMenuIcon(item, icons) {
   const icon = resolveIcon(item.icon, icons);
   const stroke = item.color || "#2c2823";
@@ -99,7 +113,7 @@ function buildPaletteMenuCategories(palette, groups) {
 
     categories.push({
       id: categoryId,
-      label: category.toLowerCase(),
+      label: getCategoryDisplayLabel(category),
       items,
     });
     seenCategoryIds.add(categoryId);
@@ -123,7 +137,7 @@ function buildPaletteMenuCategories(palette, groups) {
 
     categories.push({
       id: categoryId,
-      label: category.toLowerCase(),
+      label: getCategoryDisplayLabel(category),
       items: palette.filter((item) => item.category === category).map(createBuiltInMenuItem),
     });
     seenCategoryIds.add(categoryId);

@@ -27,15 +27,20 @@ export function renderGroupsPanel({ groups, snapshot }) {
             >
               Edit
             </button>
-            <button
-              class="ping-editor__panel-button"
-              type="button"
-              data-action="remove-group"
-              data-group-id="${escapeHtml(group.id)}"
-              ${inUse ? "disabled" : ""}
-            >
-              Remove
-            </button>
+            ${
+              inUse
+                ? ""
+                : `
+                  <button
+                    class="ping-editor__panel-button"
+                    type="button"
+                    data-action="remove-group"
+                    data-group-id="${escapeHtml(group.id)}"
+                  >
+                    Remove
+                  </button>
+                `
+            }
           </div>
         </div>
       `;

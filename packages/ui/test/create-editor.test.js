@@ -711,6 +711,8 @@ test("editor renders add-node categories as a fixed stacked header instead of a 
     const categories = harness.container.querySelector(".ping-editor__menu-categories");
     assert.equal(categories?.getAttribute("data-menu-category-layout"), "stacked");
     assert.equal(harness.container.querySelectorAll(".ping-editor__menu-category-row").length, 2);
+    assert.equal(harness.query("palette-menu-category-constants").textContent.trim(), "consts");
+    assert.equal(harness.query("palette-menu-category-modifiers").textContent.trim(), "mods");
 
     harness.click(harness.query("palette-menu-category-routing"));
     await harness.flush();
@@ -728,13 +730,76 @@ test("editor renders add-node categories as a fixed stacked header instead of a 
     );
     assert.match(
       styles,
-      /\.ping-editor__menu-category\.is-active\s*\{[\s\S]*background:\s*rgba\(43,\s*127,\s*218,\s*0\.12\);[\s\S]*border-color:\s*rgba\(43,\s*127,\s*218,\s*0\.26\);/,
+      /\.ping-editor__menu-category\.is-active\s*\{[\s\S]*background:\s*var\(--ping-chrome-notice-soft\);[\s\S]*color:\s*var\(--ping-chrome-notice\);[\s\S]*border-color:\s*var\(--ping-chrome-notice-border\);/,
     );
     assert.doesNotMatch(
       styles,
       /\.ping-editor__menu-category\.is-active\s*\{[\s\S]*box-shadow:\s*inset 0 -2px 0/,
     );
     assert.doesNotMatch(styles, /\.ping-editor__menu-categories\s*\{[^}]*overflow-x:\s*auto;/);
+    assert.match(
+      styles,
+      /\.ping-editor__menu\s*\{[\s\S]*border-radius:\s*24px;[\s\S]*background:\s*rgba\(251,\s*250,\s*248,\s*0\.97\);/,
+    );
+    assert.match(
+      styles,
+      /\.ping-editor__menu-item\s*\{[\s\S]*border-radius:\s*16px;[\s\S]*background:\s*var\(--ping-chrome-card-strong\);/,
+    );
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("groups sidebar hides remove for in-use groups and opens the dialog clear of the sidebar", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [{ id: "node-group", type: "group", groupRef: "group-a", pos: { x: 4, y: 4 }, rot: 0, params: {} }],
+        edges: [],
+        groups: {
+          "group-a": {
+            id: "group-a",
+            name: "Group A",
+            graph: {
+              nodes: [{ id: "inner-add", type: "add", pos: { x: 0, y: 0 }, rot: 0, params: { param: 1 } }],
+              edges: [],
+            },
+            inputs: [],
+            outputs: [],
+            controls: [],
+          },
+        },
+      },
+    });
+    await harness.flush();
+
+    harness.click(harness.container.querySelector('[data-tab="groups"]'));
+    await harness.flush();
+
+    assert.equal(
+      harness.container.querySelector('[data-action="remove-group"][data-group-id="group-a"]'),
+      null,
+    );
+
+    harness.click(harness.container.querySelector('[data-action="edit-group"][data-group-id="group-a"]'));
+    await harness.flush();
+
+    assert.equal(harness.query("group-config").classList.contains("is-sidebar-open"), true);
+
+    const styles = harness.container.querySelector("[data-ping-editor-style]").textContent;
+    assert.match(
+      styles,
+      /\.ping-editor__group-dialog\.is-sidebar-open\s*\{[\s\S]*right:\s*calc\(min\(320px,\s*48vw,\s*560px\)\s*\+\s*22px\);/,
+    );
+    assert.match(styles, /\.ping-editor__group-header\s*\{[\s\S]*padding-top:\s*4px;/);
+    assert.match(
+      styles,
+      /\.ping-editor__group-dialog\s+\.ping-editor__panel-button:hover,[\s\S]*transform:\s*none;[\s\S]*border-color:\s*var\(--ping-chrome-notice-border\);/,
+    );
 
     harness.unmount();
   } finally {
@@ -890,7 +955,7 @@ test("editor exposes inspect as a dedicated sidebar tab", async () => {
     const styles = harness.container.querySelector("[data-ping-editor-style]").textContent;
     assert.match(
       styles,
-      /\.ping-editor__tab\.has-notice,\s*\.ping-editor__tab\.has-notice:hover,\s*\.ping-editor__tab\.has-notice:focus-visible\s*\{[^}]*color:\s*var\(--ping-chrome-accent-strong\);/,
+      /\.ping-editor__tab\.has-notice,\s*\.ping-editor__tab\.has-notice:hover,\s*\.ping-editor__tab\.has-notice:focus-visible\s*\{[^}]*color:\s*var\(--ping-chrome-notice\);/,
     );
     assert.match(
       styles,
@@ -1933,8 +1998,7 @@ test("editor supports grouping, diagnostics focus, sample slot updates, and rese
     const inUseRemoveGroupButton = harness.container.querySelector(
       `[data-action="remove-group"][data-group-id="${groupId}"]`,
     );
-    assert.ok(inUseRemoveGroupButton);
-    assert.equal(inUseRemoveGroupButton.disabled, true);
+    assert.equal(inUseRemoveGroupButton, null);
 
     harness.editor.setDiagnostics([
       {
@@ -2346,7 +2410,7 @@ test("editor reserves ctrl-wheel for zoom and keeps a full-width desktop viewpor
     assert.match(styles, /\.ping-editor__menu-item\s*\{[\s\S]*display:\s*flex;/);
     assert.match(
       styles,
-      /\.ping-editor__menu-item:hover\s*\{[\s\S]*transform:\s*none;[\s\S]*border-color:\s*rgba\(43,\s*127,\s*218,\s*0\.18\);/,
+      /\.ping-editor__menu-item:hover\s*\{[\s\S]*transform:\s*none;[\s\S]*border-color:\s*var\(--ping-chrome-notice-border\);/,
     );
     assert.doesNotMatch(styles, /\.ping-editor__menu-item:hover\s*\{[\s\S]*transform:\s*translateY\(-1px\);/);
     assert.ok(!styles.includes(".ping-editor__menu-item-copy"));

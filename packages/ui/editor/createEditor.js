@@ -645,7 +645,7 @@ function renderGroupMappingSection(kind, title, active, available, selectedId = 
   `;
 }
 
-function renderGroupConfigPanel(groupDraft) {
+function renderGroupConfigPanel(groupDraft, { sidebarCollapsed = false } = {}) {
   if (!groupDraft?.open) {
     return "";
   }
@@ -653,7 +653,10 @@ function renderGroupConfigPanel(groupDraft) {
   const isEdit = groupDraft.mode === "edit";
 
   return `
-    <div class="ping-editor__group-dialog" data-testid="group-config">
+    <div
+      class="ping-editor__group-dialog ${sidebarCollapsed ? "is-sidebar-collapsed" : "is-sidebar-open"}"
+      data-testid="group-config"
+    >
       <header class="ping-editor__group-header">
         <div>
           <h2>${isEdit ? "Edit Group" : "New Group"}</h2>
@@ -734,6 +737,9 @@ function createStyles(config) {
   const chromeFocusRing = "rgba(154, 82, 63, 0.18)";
   const chromeTextOnAccent = "#fff7f3";
   const chromeShadow = "rgba(115, 58, 45, 0.18)";
+  const chromeNotice = "#85b8ff";
+  const chromeNoticeSoft = "rgba(133, 184, 255, 0.16)";
+  const chromeNoticeBorder = "rgba(133, 184, 255, 0.38)";
 
   return `
     <style data-ping-editor-style>
@@ -755,6 +761,9 @@ function createStyles(config) {
         --ping-chrome-focus: ${chromeFocusRing};
         --ping-chrome-on-accent: ${chromeTextOnAccent};
         --ping-chrome-shadow: ${chromeShadow};
+        --ping-chrome-notice: ${chromeNotice};
+        --ping-chrome-notice-soft: ${chromeNoticeSoft};
+        --ping-chrome-notice-border: ${chromeNoticeBorder};
         --ping-chrome-shell: var(--ping-chrome-top);
         --ping-chrome-card: linear-gradient(180deg, rgba(255, 251, 247, 0.92), rgba(255, 238, 227, 0.84));
         --ping-chrome-card-strong: linear-gradient(180deg, rgba(255, 252, 247, 0.96), rgba(255, 242, 232, 0.9));
@@ -1087,7 +1096,7 @@ function createStyles(config) {
       .ping-editor__tab.has-notice,
       .ping-editor__tab.has-notice:hover,
       .ping-editor__tab.has-notice:focus-visible {
-        color: var(--ping-chrome-accent-strong);
+        color: var(--ping-chrome-notice);
       }
       .ping-editor__toolbar .ping-editor__panel-button:hover,
       .ping-editor__sidebar .ping-editor__panel-button:hover,
@@ -1095,6 +1104,7 @@ function createStyles(config) {
         background: var(--ping-chrome-plate-hover);
         border-color: var(--ping-chrome-border-strong);
         color: var(--ping-chrome-ink-strong);
+        transform: none;
       }
       .ping-editor__panel-button:hover,
       .ping-editor__mini-button:hover {
@@ -1196,6 +1206,9 @@ function createStyles(config) {
         border: 1px solid var(--ping-chrome-border);
         background: var(--ping-chrome-card);
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+        transition:
+          border-color 120ms ease,
+          box-shadow 140ms ease;
       }
       .ping-editor__diagnostic {
         cursor: pointer;
@@ -1209,6 +1222,10 @@ function createStyles(config) {
       }
       .ping-editor__palette-item {
         text-align: left;
+      }
+      .ping-editor__group-item:hover,
+      .ping-editor__mapping-item:hover {
+        border-color: var(--ping-chrome-notice-border);
       }
       .ping-editor__palette-label,
       .ping-editor__group-name {
@@ -1313,12 +1330,12 @@ function createStyles(config) {
         display: grid;
         grid-template-rows: auto minmax(0, 1fr);
         gap: 10px;
-        padding: 12px;
+        padding: 14px;
         min-height: 0;
-        background: rgba(251, 250, 248, 0.96);
-        border: 1px solid ${config.panel.border};
-        border-radius: 20px;
-        box-shadow: 0 18px 40px ${config.panel.shadow};
+        background: rgba(251, 250, 248, 0.97);
+        border: 1px solid var(--ping-chrome-border-strong);
+        border-radius: 24px;
+        box-shadow: 0 24px 50px var(--ping-chrome-shadow);
         overflow: hidden;
       }
       .ping-editor__menu-categories {
@@ -1333,10 +1350,10 @@ function createStyles(config) {
       .ping-editor__menu-category {
         min-width: 0;
         min-height: 36px;
-        border: 1px solid ${config.panel.border};
-        background: rgba(255, 255, 255, 0.88);
-        color: #6d675e;
-        border-radius: 12px;
+        border: 1px solid var(--ping-chrome-border);
+        background: var(--ping-chrome-card-strong);
+        color: var(--ping-chrome-ink);
+        border-radius: 14px;
         padding: 7px 8px;
         font: inherit;
         font-size: 11px;
@@ -1346,6 +1363,7 @@ function createStyles(config) {
         cursor: pointer;
         text-wrap: balance;
         text-transform: lowercase;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26);
         transition:
           background-color 120ms ease,
           border-color 120ms ease,
@@ -1353,22 +1371,22 @@ function createStyles(config) {
           box-shadow 140ms ease;
       }
       .ping-editor__menu-category.is-active {
-        background: rgba(43, 127, 218, 0.12);
-        color: ${config.selection.color};
-        border-color: rgba(43, 127, 218, 0.26);
+        background: var(--ping-chrome-notice-soft);
+        color: var(--ping-chrome-notice);
+        border-color: var(--ping-chrome-notice-border);
       }
       .ping-editor__menu-category:hover {
         transform: none;
-        background: rgba(255, 255, 255, 0.96);
-        border-color: rgba(43, 127, 218, 0.18);
-        color: ${config.panel.text};
+        background: var(--ping-chrome-plate-hover);
+        border-color: var(--ping-chrome-notice-border);
+        color: var(--ping-chrome-ink-strong);
       }
       .ping-editor__menu-category:focus-visible {
         outline: none;
-        background: rgba(255, 255, 255, 0.98);
-        border-color: rgba(43, 127, 218, 0.3);
-        color: ${config.panel.text};
-        box-shadow: 0 0 0 2px rgba(43, 127, 218, 0.14);
+        background: var(--ping-chrome-plate-hover);
+        border-color: var(--ping-chrome-notice-border);
+        color: var(--ping-chrome-ink-strong);
+        box-shadow: 0 0 0 2px rgba(133, 184, 255, 0.16);
       }
       .ping-editor__menu-list {
         display: grid;
@@ -1382,10 +1400,15 @@ function createStyles(config) {
         align-items: center;
         text-align: left;
         padding: 9px 12px;
+        border-radius: 16px;
+        border-color: var(--ping-chrome-border);
+        background: var(--ping-chrome-card-strong);
+        color: var(--ping-chrome-ink-strong);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
       }
       .ping-editor__menu-item:hover {
         transform: none;
-        border-color: rgba(43, 127, 218, 0.18);
+        border-color: var(--ping-chrome-notice-border);
       }
       .ping-editor__menu-item-icon-wrap {
         width: 24px;
@@ -1394,7 +1417,7 @@ function createStyles(config) {
         align-items: center;
         justify-content: center;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.75);
+        background: var(--ping-chrome-plate);
         flex: 0 0 auto;
       }
       .ping-editor__menu-item-icon {
@@ -1405,7 +1428,7 @@ function createStyles(config) {
         line-height: 1.2;
       }
       .ping-editor__menu-empty {
-        color: #6d675e;
+        color: var(--ping-chrome-ink-muted);
         line-height: 1.35;
       }
       .ping-editor__menu-empty {
@@ -1414,24 +1437,36 @@ function createStyles(config) {
       }
       .ping-editor__group-dialog {
         position: absolute;
-        right: 18px;
+        right: 22px;
         top: 18px;
         z-index: 18;
-        width: min(420px, calc(100% - 36px));
+        width: min(420px, calc(100% - 44px));
         max-height: calc(100% - 36px);
         overflow: auto;
-        padding: 18px;
+        padding: 22px 18px 18px;
         border-radius: 24px;
-        border: 1px solid ${config.panel.border};
+        border: 1px solid var(--ping-chrome-border-strong);
         background: rgba(251, 250, 248, 0.97);
-        box-shadow: 0 24px 50px ${config.panel.shadow};
+        box-shadow: 0 24px 50px var(--ping-chrome-shadow);
+      }
+      .ping-editor__group-dialog.is-sidebar-open {
+        right: calc(${sidebarWidthCss} + 22px);
+        max-width: calc(100% - ${sidebarWidthCss} - 44px);
+      }
+      .ping-editor__group-dialog.is-sidebar-collapsed {
+        right: calc(${collapsedSidebarWidthPx}px + 22px);
+        max-width: calc(100% - ${collapsedSidebarWidthPx}px - 44px);
       }
       .ping-editor__group-header {
         display: flex;
         gap: 10px;
         justify-content: space-between;
         align-items: flex-start;
-        margin-bottom: 12px;
+        padding-top: 4px;
+        margin-bottom: 14px;
+      }
+      .ping-editor__group-header .ping-editor__panel-button {
+        margin-top: 2px;
       }
       .ping-editor__group-subtitle {
         margin: 4px 0 0;
@@ -1448,6 +1483,12 @@ function createStyles(config) {
       .ping-editor__empty {
         margin: 0;
         color: #6d675e;
+      }
+      .ping-editor__group-dialog .ping-editor__panel-button:hover,
+      .ping-editor__group-dialog .ping-editor__mini-button:hover,
+      .ping-editor__group-item .ping-editor__panel-button:hover {
+        transform: none;
+        border-color: var(--ping-chrome-notice-border);
       }
       .ping-editor__svg {
         display: block;
@@ -3698,8 +3739,8 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
                     : "default";
   }
 
-  function buildViewportMarkup(selection) {
-    return `
+function buildViewportMarkup(selection) {
+  return `
       ${renderSvgMarkup({
         snapshot: state.snapshot,
         routes: state.routes,
@@ -3717,9 +3758,9 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
         boxSelection: state.boxSelection,
       })}
       ${buildMenuMarkup(state)}
-      ${renderGroupConfigPanel(state.groupDraft)}
+      ${renderGroupConfigPanel(state.groupDraft, { sidebarCollapsed: state.sidebarCollapsed })}
     `;
-  }
+}
 
   function render() {
     if (!state.root) {
