@@ -19,6 +19,7 @@ import {
   validateGraph,
 } from "@ping/core";
 import { Editor } from "@ping/ui/react";
+import { Dough } from "../../../dough/dough.js";
 import { startTransition, useEffect, useRef, useState } from "react";
 
 const REGISTRY_INDEX = buildRegistryIndex();
@@ -33,6 +34,7 @@ const INITIAL_TEMPO_BPM = DEFAULT_TEMPO_BPM;
 const GRAPH_HISTORY_LIMIT = 100;
 const SIDEBAR_ACTION_PULSE_MS = 180;
 const COPY_ACTION_SUCCESS_MS = 900;
+const DOUGH_BASE_PATH = "/dough/";
 
 function cloneGraphSnapshot(snapshot) {
   if (typeof structuredClone === "function") {
@@ -117,6 +119,50 @@ function instrumentDough(dough) {
 
   dough.__pingInstrumented = true;
   return dough;
+}
+
+const eagerDoughState = {
+  instance: null,
+  error: null,
+};
+
+function createEagerDough() {
+  // Dough expects an onTick callback on every clock message even though the
+  // bridge takes over scheduling by wrapping the worklet port later.
+  const dough = instrumentDough(
+    new Dough({
+      base: DOUGH_BASE_PATH,
+      onTick() {},
+    }),
+  );
+  traceAudio("setupAudio:dough-created", {
+    base: dough.base,
+    sampleRate: dough.sampleRate,
+  });
+  return dough;
+}
+
+if (typeof window !== "undefined") {
+  try {
+    eagerDoughState.instance = createEagerDough();
+  } catch (error) {
+    eagerDoughState.error = error;
+    traceAudio("setupAudio:dough-create-failed", {
+      message: error?.message ?? "unknown error",
+    });
+  }
+}
+
+function getEagerDough() {
+  if (eagerDoughState.error) {
+    throw eagerDoughState.error;
+  }
+
+  if (!eagerDoughState.instance) {
+    eagerDoughState.instance = createEagerDough();
+  }
+
+  return eagerDoughState.instance;
 }
 
 function escapeHtml(value) {
@@ -873,25 +919,12 @@ export function Ping() {
       traceAudio("setupAudio:start");
 
       try {
-        const { Dough } = await import("../../../dough/dough.js");
-        traceAudio("setupAudio:dough-module-loaded");
-
         if (disposed) {
           traceAudio("setupAudio:aborted-disposed-before-init");
           return;
         }
 
-        // Dough expects an onTick callback on every clock message even though the
-        // bridge takes over scheduling by wrapping the worklet port later.
-        const dough = new Dough({
-          base: "/dough/",
-          onTick() {},
-        });
-        doughRef.current = instrumentDough(dough);
-        traceAudio("setupAudio:dough-created", {
-          base: dough.base,
-          sampleRate: dough.sampleRate,
-        });
+        doughRef.current = getEagerDough();
 
         const bridge = createAudioBridge({
           runtime,
