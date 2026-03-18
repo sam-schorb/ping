@@ -2,6 +2,5 @@
 node_modules/
 .playwright-browsers/
 apps/web/public/dough/
-apps/web/public/samples/
 apps/web/playwright-report/
 apps/web/test-results/
