@@ -167,11 +167,16 @@ export function createRuntimeStub() {
   return {
     resetCount: 0,
     thumbs: [],
+    nodePulses: [],
+    lastTickProcessed: 1,
     getThumbState() {
       return this.thumbs;
     },
+    getNodePulseState() {
+      return this.nodePulses;
+    },
     getMetrics() {
-      return { lastTickProcessed: 1 };
+      return { lastTickProcessed: this.lastTickProcessed };
     },
     resetPulses() {
       this.resetCount += 1;

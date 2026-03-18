@@ -2,7 +2,7 @@
   "nodes": [
     {
       "id": "node-output",
-      "type": "output",
+      "type": "out",
       "pos": { "x": 0, "y": 0 },
       "rot": 0,
       "params": {}

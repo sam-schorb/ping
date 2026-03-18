@@ -31,7 +31,7 @@ test("delete selection removes connected edges before nodes", () => {
   const snapshot = {
     nodes: [
       { id: "node-a", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: { param: 1 } },
-      { id: "node-b", type: "output", pos: { x: 4, y: 0 }, rot: 0, params: {} },
+      { id: "node-b", type: "out", pos: { x: 4, y: 0 }, rot: 0, params: {} },
     ],
     edges: [
       {
@@ -55,7 +55,7 @@ test("delete node set removes all touched edges once before removing every selec
     nodes: [
       { id: "node-a", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: { param: 1 } },
       { id: "node-b", type: "add", pos: { x: 4, y: 0 }, rot: 0, params: { param: 2 } },
-      { id: "node-c", type: "output", pos: { x: 8, y: 0 }, rot: 0, params: {} },
+      { id: "node-c", type: "out", pos: { x: 8, y: 0 }, rot: 0, params: {} },
     ],
     edges: [
       {
@@ -118,7 +118,7 @@ test("clipboard subgraph keeps only selected nodes, internal edges, and referenc
     nodes: [
       { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
       { id: "node-b", type: "group", groupRef: "group-a", pos: { x: 6, y: 2 }, rot: 0, params: {} },
-      { id: "node-c", type: "output", pos: { x: 10, y: 2 }, rot: 0, params: {} },
+      { id: "node-c", type: "out", pos: { x: 10, y: 2 }, rot: 0, params: {} },
     ],
     edges: [
       {
@@ -349,7 +349,7 @@ test("edge normalization accepts either drag direction but preserves out-to-in g
   const snapshot = {
     nodes: [
       { id: "node-a", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: { param: 1 } },
-      { id: "node-b", type: "output", pos: { x: 4, y: 0 }, rot: 0, params: {} },
+      { id: "node-b", type: "out", pos: { x: 4, y: 0 }, rot: 0, params: {} },
     ],
     edges: [],
     groups: {},
@@ -381,7 +381,7 @@ test("group bundle order and rewiring follow the spec", () => {
     nodes: [
       { id: "node-in", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: { param: 1 } },
       { id: "node-mid", type: "add", pos: { x: 4, y: 0 }, rot: 0, params: { param: 2 } },
-      { id: "node-out", type: "output", pos: { x: 8, y: 0 }, rot: 0, params: {} },
+      { id: "node-out", type: "out", pos: { x: 8, y: 0 }, rot: 0, params: {} },
     ],
     edges: [
       {
@@ -424,7 +424,7 @@ test("group updates shift connected control edges when signal inputs move", () =
     nodes: [
       { id: "node-source", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: { param: 1 } },
       { id: "node-group", type: "group", groupRef: "group-a", pos: { x: 4, y: 0 }, rot: 0, params: {} },
-      { id: "node-out", type: "output", pos: { x: 8, y: 0 }, rot: 0, params: {} },
+      { id: "node-out", type: "out", pos: { x: 8, y: 0 }, rot: 0, params: {} },
     ],
     edges: [
       {
@@ -480,7 +480,7 @@ test("group updates reject removing a slot that an instance edge still uses", ()
   const snapshot = {
     nodes: [
       { id: "node-group", type: "group", groupRef: "group-a", pos: { x: 4, y: 0 }, rot: 0, params: {} },
-      { id: "node-out", type: "output", pos: { x: 8, y: 0 }, rot: 0, params: {} },
+      { id: "node-out", type: "out", pos: { x: 8, y: 0 }, rot: 0, params: {} },
     ],
     edges: [
       {

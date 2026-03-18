@@ -23,7 +23,7 @@ test("runtime enforces minDelayTicks when an edge delay is zero", () => {
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         param: 1,
         state: {},
         inputs: 1,
@@ -72,7 +72,7 @@ test("runtime clamps invalid event payloads and warns instead of throwing", () =
     nodes: [
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         param: 1,
         state: {},
         inputs: 1,

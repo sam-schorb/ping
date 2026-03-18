@@ -10,7 +10,7 @@ function escapeHtml(value) {
 
 export const DEFAULT_PALETTE_MENU_CATEGORY_ID = "basic";
 
-const BASIC_MENU_TYPES = new Set(["pulse", "output", "add", "set", "const1", "speed"]);
+const BASIC_MENU_TYPES = new Set(["pulse", "out", "add", "set", "const1", "speed"]);
 const CATEGORY_ORDER = ["Sources", "Sinks", "Routing", "Math", "Constants", "Modifiers", "State", "Logic"];
 const STACKED_CATEGORY_THRESHOLD = 5;
 

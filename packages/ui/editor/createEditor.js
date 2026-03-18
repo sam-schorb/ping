@@ -75,6 +75,11 @@ function normalizeTempo(value) {
 
 const CLIPBOARD_MIME = "application/x-ping-subgraph+json";
 const CLIPBOARD_TEXT_MARKER = "Ping subgraph";
+const NODE_PULSE_DURATION_MS = 200;
+
+function getNodePulseWindowTicks(tempo) {
+  return (normalizeTempo(tempo) / 60) * (NODE_PULSE_DURATION_MS / 1000);
+}
 
 function escapeHtml(value) {
   return String(value)
@@ -234,7 +239,9 @@ function hoverEquals(left, right) {
 }
 
 function isInteractiveTarget(target) {
-  return Boolean(target?.closest?.("[data-action], input, select, button, label"));
+  return Boolean(
+    target?.closest?.("[data-action], input, select, button, label, .ping-editor__menu, .ping-editor__group-dialog"),
+  );
 }
 
 function normalizeSidebarExtensions(extensions) {
@@ -278,6 +285,49 @@ function normalizeSidebarExtensions(extensions) {
     : [];
 
   return { tabs, actions };
+}
+
+function sidebarTabStructureEquals(left, right) {
+  return (
+    left.id === right.id &&
+    left.label === right.label &&
+    (left.testId ?? "") === (right.testId ?? "")
+  );
+}
+
+function sidebarActionEquals(left, right) {
+  return (
+    left.id === right.id &&
+    left.label === right.label &&
+    (left.testId ?? "") === (right.testId ?? "")
+  );
+}
+
+function sidebarExtensionsRequireRender(current, next, activeTab) {
+  if (current.tabs.length !== next.tabs.length || current.actions.length !== next.actions.length) {
+    return true;
+  }
+
+  for (let index = 0; index < current.actions.length; index += 1) {
+    if (!sidebarActionEquals(current.actions[index], next.actions[index])) {
+      return true;
+    }
+  }
+
+  for (let index = 0; index < current.tabs.length; index += 1) {
+    const currentTab = current.tabs[index];
+    const nextTab = next.tabs[index];
+
+    if (!sidebarTabStructureEquals(currentTab, nextTab)) {
+      return true;
+    }
+
+    if (currentTab.id === activeTab && currentTab.markup !== nextTab.markup) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function getSidebarTabIds(sidebarExtensions) {
@@ -865,6 +915,10 @@ function createStyles(config) {
         overflow: hidden;
         outline: none;
         touch-action: none;
+      }
+      .ping-editor__viewport-canvas {
+        position: absolute;
+        inset: 0;
       }
       .ping-editor__viewport:focus-visible {
         box-shadow: inset 0 0 0 2px ${config.selection.color};
@@ -1902,6 +1956,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     config: resolvedConfig,
     root: null,
     viewport: null,
+    viewportCanvas: null,
     snapshot: createEmptyGraphSnapshot(),
     routes: createEmptyRoutes(),
     diagnostics: [],
@@ -1927,6 +1982,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     slots: createDefaultSampleSlots(),
     tempo: DEFAULT_TEMPO_BPM,
     thumbs: [],
+    nodePulseStates: [],
     frameId: null,
     dirty: true,
     mounted: false,
@@ -2396,7 +2452,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
 
     state.groupDraft = draft;
     state.groupDialogScrollTop = 0;
-    markViewportDirty();
+    markDirty();
   }
 
   function handleGroupEdit(groupId) {
@@ -2411,7 +2467,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
 
     state.groupDraft = createGroupEditDraft(state, group);
     state.groupDialogScrollTop = 0;
-    markViewportDirty();
+    markDirty();
   }
 
   function handleGroupMove(kind, index, direction) {
@@ -2430,7 +2486,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
         ),
       },
     };
-    markViewportDirty();
+    markDirty();
   }
 
   function handleGroupRemoveMapping(kind, mappingId) {
@@ -2462,7 +2518,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
         [kind]: state.groupDraft.restoreSelection[kind] || removed.id,
       },
     };
-    markViewportDirty();
+    markDirty();
   }
 
   function handleGroupRestore(kind) {
@@ -2495,7 +2551,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
         [kind]: nextAvailable[0]?.id ?? "",
       },
     };
-    markViewportDirty();
+    markDirty();
   }
 
   function handleGroupCommit() {
@@ -2974,7 +3030,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
         ...state.boxSelection,
         current: worldPoint,
       };
-      markViewportDirty();
+      markDirty();
       return;
     }
 
@@ -3732,26 +3788,39 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
                     : "default";
   }
 
-function buildViewportMarkup(selection) {
+function buildViewportCanvasMarkup(selection) {
+  return renderSvgMarkup({
+    snapshot: state.snapshot,
+    routes: state.routes,
+    registry: state.registry,
+    config: state.config,
+    camera: state.camera,
+    viewportSize: state.viewportSize,
+    selection,
+    hover: state.hover,
+    groupSelection: state.groupSelection,
+    drag: state.drag,
+    nodePositionOverrides: state.nodePositionOverrides,
+    thumbs: state.thumbs,
+    nodePulseStates: state.nodePulseStates,
+    previewRoute: buildPreviewRouteForRender(),
+    boxSelection: state.boxSelection,
+  });
+}
+
+function buildViewportOverlayMarkup() {
   return `
-      ${renderSvgMarkup({
-        snapshot: state.snapshot,
-        routes: state.routes,
-        registry: state.registry,
-        config: state.config,
-        camera: state.camera,
-        viewportSize: state.viewportSize,
-        selection,
-        hover: state.hover,
-        groupSelection: state.groupSelection,
-        drag: state.drag,
-        nodePositionOverrides: state.nodePositionOverrides,
-        thumbs: state.thumbs,
-        previewRoute: buildPreviewRouteForRender(),
-        boxSelection: state.boxSelection,
-      })}
       ${buildMenuMarkup(state)}
       ${renderGroupConfigPanel(state.groupDraft, { sidebarCollapsed: state.sidebarCollapsed })}
+    `;
+}
+
+function buildViewportMarkup(selection) {
+  return `
+      <div class="ping-editor__viewport-canvas">
+        ${buildViewportCanvasMarkup(selection)}
+      </div>
+      ${buildViewportOverlayMarkup()}
     `;
 }
 
@@ -3920,6 +3989,7 @@ function buildViewportMarkup(selection) {
     `;
 
     state.viewport = state.root.querySelector(".ping-editor__viewport");
+    state.viewportCanvas = state.root.querySelector(".ping-editor__viewport-canvas");
     restoreSidebarTabsScrollLeft(state.root, state.sidebarTabsScrollLeft);
     restoreMenuCategoriesScrollLeft(state.root, state.menuCategoriesScrollLeft);
     restoreGroupDialogScrollTop(state.root, state.groupDialogScrollTop);
@@ -3933,21 +4003,15 @@ function buildViewportMarkup(selection) {
   }
 
   function renderViewport() {
-    if (!state.root || !state.viewport) {
+    if (!state.root || !state.viewport || !state.viewportCanvas) {
       render();
       return;
     }
 
-    state.menuCategoriesScrollLeft = readMenuCategoriesScrollLeft(state.root);
-    state.groupDialogScrollTop = readGroupDialogScrollTop(state.root);
-    const groupDialogFocusState = readGroupDialogFocusState(state.root);
     const selection = clearDeletedSelection(state.selection, state.snapshot);
     state.selection = selection;
     state.viewport.style.cursor = getViewportCursor();
-    state.viewport.innerHTML = buildViewportMarkup(selection);
-    restoreMenuCategoriesScrollLeft(state.root, state.menuCategoriesScrollLeft);
-    restoreGroupDialogScrollTop(state.root, state.groupDialogScrollTop);
-    restoreGroupDialogFocus(state.root, groupDialogFocusState);
+    state.viewportCanvas.innerHTML = buildViewportCanvasMarkup(selection);
     state.dirty = false;
     state.thumbOnlyDirty = false;
     state.viewportOnlyDirty = false;
@@ -3958,7 +4022,7 @@ function buildViewportMarkup(selection) {
       return;
     }
 
-    const thumbLayer = state.root.querySelector(".ping-editor__thumb-layer");
+    const thumbLayer = state.viewportCanvas?.querySelector(".ping-editor__thumb-layer");
 
     if (!thumbLayer) {
       render();
@@ -3996,9 +4060,10 @@ function buildViewportMarkup(selection) {
     }
 
     state.lastFrameAt = now;
-    const nextThumbs = state.runtime?.getThumbState?.(
-      state.runtime?.getMetrics?.()?.lastTickProcessed ?? 0,
-    ) ?? [];
+    const currentTick = state.runtime?.getMetrics?.()?.lastTickProcessed ?? 0;
+    const nextThumbs = state.runtime?.getThumbState?.(currentTick) ?? [];
+    const nextNodePulseStates =
+      state.runtime?.getNodePulseState?.(currentTick, getNodePulseWindowTicks(state.tempo)) ?? [];
 
     if (JSON.stringify(nextThumbs) !== JSON.stringify(state.thumbs)) {
       state.thumbs = nextThumbs;
@@ -4006,6 +4071,11 @@ function buildViewportMarkup(selection) {
         state.thumbOnlyDirty = true;
       }
       state.dirty = true;
+    }
+
+    if (JSON.stringify(nextNodePulseStates) !== JSON.stringify(state.nodePulseStates)) {
+      state.nodePulseStates = nextNodePulseStates;
+      markViewportDirty();
     }
 
     if (state.dirty) {
@@ -4077,6 +4147,7 @@ function buildViewportMarkup(selection) {
     state.root.innerHTML = "";
     state.root = null;
     state.viewport = null;
+    state.viewportCanvas = null;
   }
 
   return {
@@ -4134,13 +4205,21 @@ function buildViewportMarkup(selection) {
       updateTempo(tempo);
     },
     setSidebarExtensions(extensions) {
-      state.sidebarExtensions = normalizeSidebarExtensions(extensions);
+      const nextSidebarExtensions = normalizeSidebarExtensions(extensions);
+      const nextActiveTab = getSidebarTabIds(nextSidebarExtensions).has(state.activeTab) ? state.activeTab : "console";
+      const shouldRender =
+        nextActiveTab !== state.activeTab ||
+        sidebarExtensionsRequireRender(state.sidebarExtensions, nextSidebarExtensions, nextActiveTab);
 
-      if (!getSidebarTabIds(state.sidebarExtensions).has(state.activeTab)) {
-        state.activeTab = "console";
+      state.sidebarExtensions = nextSidebarExtensions;
+
+      if (nextActiveTab !== state.activeTab) {
+        state.activeTab = nextActiveTab;
       }
 
-      markDirty();
+      if (shouldRender) {
+        markDirty();
+      }
     },
     setHistory(history) {
       state.history = {

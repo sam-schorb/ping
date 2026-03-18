@@ -42,6 +42,7 @@ const CATEGORY_COLORS = {
 };
 
 const NODE_TYPE_ALIASES = Object.freeze({
+  output: "out",
   multiplexer: "mux",
   demultiplexer: "demux",
 });
@@ -72,6 +73,7 @@ function defineConstantNode(value) {
 function defineFilterNode({
   type,
   label,
+  canvasLabel,
   description,
   compare,
   paletteOrder,
@@ -80,6 +82,7 @@ function defineFilterNode({
   return defineNode({
     type,
     label,
+    ...(canvasLabel ? { canvasLabel } : {}),
     description,
     category: "Logic",
     icon,
@@ -115,11 +118,11 @@ export const NODE_REGISTRY = Object.freeze([
     paletteOrder: 10,
   }),
   defineNode({
-    type: "output",
-    label: "Output",
+    type: "out",
+    label: "Out",
     description: "Consume pulses and hand them to the audio integration layer.",
     category: "Sinks",
-    icon: "output",
+    icon: "out",
     color: CATEGORY_COLORS.Sinks,
     layout: "single-in",
     inputs: 1,
@@ -216,8 +219,8 @@ export const NODE_REGISTRY = Object.freeze([
   }),
   defineNode({
     type: "sub",
-    label: "Subtract",
-    description: "Subtract the current parameter from the incoming pulse value.",
+    label: "Sub",
+    description: "Reduce the incoming pulse value by the current parameter.",
     category: "Math",
     icon: "sub",
     color: CATEGORY_COLORS.Math,
@@ -442,6 +445,7 @@ export const NODE_REGISTRY = Object.freeze([
   defineFilterNode({
     type: "gtp",
     label: "Greater Than",
+    canvasLabel: "GT",
     description: "Pass the pulse when its value is greater than the parameter.",
     compare: (value, param) => value > param,
     paletteOrder: 400,
@@ -449,20 +453,23 @@ export const NODE_REGISTRY = Object.freeze([
   defineFilterNode({
     type: "ltp",
     label: "Less Than",
+    canvasLabel: "LT",
     description: "Pass the pulse when its value is less than the parameter.",
     compare: (value, param) => value < param,
     paletteOrder: 410,
   }),
   defineFilterNode({
     type: "gtep",
-    label: "Greater or Equal",
+    label: "Greater Than Equal",
+    canvasLabel: "GTE",
     description: "Pass the pulse when its value is greater than or equal to the parameter.",
     compare: (value, param) => value >= param,
     paletteOrder: 420,
   }),
   defineFilterNode({
     type: "ltep",
-    label: "Less or Equal",
+    label: "Less Than Equal",
+    canvasLabel: "LTE",
     description: "Pass the pulse when its value is less than or equal to the parameter.",
     compare: (value, param) => value <= param,
     paletteOrder: 430,

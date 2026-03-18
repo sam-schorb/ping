@@ -35,7 +35,7 @@ test("routeProjectGraph merges instantiated group-internal delays needed by buil
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         pos: { x: 8, y: 0 },
         rot: 0,
         params: {},

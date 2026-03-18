@@ -10,7 +10,7 @@ test("hit testing prioritizes ports, edges, and nodes with world-space math", ()
   const snapshot = {
     nodes: [
       { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 3 } },
-      { id: "node-b", type: "output", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+      { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
     ],
     edges: [
       {

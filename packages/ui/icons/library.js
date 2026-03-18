@@ -2,6 +2,7 @@ export const DEFAULT_ICON_LIBRARY = Object.freeze({
   default: { viewBox: "0 0 24 24", path: "M5 5h14v14H5z" },
   unknown: { viewBox: "0 0 24 24", path: "M12 5a5 5 0 0 1 5 5c0 3-3 3-3 6m-2 3h0" },
   pulse: { viewBox: "0 0 24 24", path: "M3 12h4l2-5 4 10 2-5h6" },
+  out: { viewBox: "0 0 24 24", path: "M5 12h10m0 0-4-4m4 4-4 4" },
   output: { viewBox: "0 0 24 24", path: "M5 12h10m0 0-4-4m4 4-4 4" },
   group: { viewBox: "0 0 24 24", path: "M4 6h7v7H4zM13 11h7v7h-7z" },
   mux: { viewBox: "0 0 24 24", path: "M5 6h4v4h6v4h4v4h-4v-4H9V6H5z" },

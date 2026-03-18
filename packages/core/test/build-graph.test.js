@@ -51,7 +51,7 @@ test("buildGraph compiles a valid graph into a stable runtime-ready graph", asyn
     },
     {
       id: "node-output",
-      type: "output",
+      type: "out",
       param: 1,
       state: {},
       inputs: 1,

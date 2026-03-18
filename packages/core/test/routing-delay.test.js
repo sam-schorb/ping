@@ -34,7 +34,7 @@ test("routing allows zero base delay when anchors coincide", () => {
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         pos: { x: 3, y: 0 },
         rot: 0,
         params: {},

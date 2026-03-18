@@ -18,7 +18,7 @@ function createPulseToOutputGraph(delay = 3, rate = 1) {
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         param: 1,
         state: {},
         inputs: 1,
@@ -71,7 +71,7 @@ function createOrderSensitivePatchGraphs() {
         },
         {
           id: "node-output",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,
@@ -143,7 +143,7 @@ function createOrderSensitivePatchGraphs() {
         },
         {
           id: "node-output",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,
@@ -208,7 +208,7 @@ test("createCompiledGraphPatch captures incremental node and edge changes", () =
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         param: 1,
         state: {},
         inputs: 1,
@@ -255,7 +255,7 @@ test("createCompiledGraphPatch captures incremental node and edge changes", () =
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         param: 1,
         state: {},
         inputs: 1,
@@ -347,7 +347,7 @@ test("updated params affect already-scheduled events when they are processed", (
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         param: 1,
         state: {},
         inputs: 1,
@@ -434,7 +434,7 @@ test("adding a pulse node through applyPatch seeds it immediately", () => {
       nodes: [
         {
           id: "node-output",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,
@@ -494,7 +494,7 @@ test("adding a pulse node through applyPatch inherits the global pulse phase", (
         },
         {
           id: "node-output-a",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,
@@ -503,7 +503,7 @@ test("adding a pulse node through applyPatch inherits the global pulse phase", (
         },
         {
           id: "node-output-b",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,

@@ -77,6 +77,7 @@ export class Runtime {
     this.activeEvents = new Map();
     this.activeEventKeysByNodeId = new Map();
     this.activeEventKeysByEdgeId = new Map();
+    this.nodePulseTicksByNodeId = new Map();
   }
 
   setGraph(graph) {
@@ -170,6 +171,7 @@ export class Runtime {
       this.scheduler.removeByNode(nodeId);
       this.dropActiveEventsForNode(nodeId);
       this.nodeRngById.delete(nodeId);
+      this.nodePulseTicksByNodeId.delete(nodeId);
     }
 
     for (const edgeId of removedEdges) {
@@ -247,6 +249,30 @@ export class Runtime {
     return snapshotRuntimeMetrics(this.metrics, this.getQueueSize());
   }
 
+  getNodePulseState(nowTick, durationTicks) {
+    if (!Number.isFinite(nowTick) || !Number.isFinite(durationTicks) || durationTicks <= 0) {
+      return [];
+    }
+
+    const pulses = [];
+
+    for (const [nodeId, receivedTick] of this.nodePulseTicksByNodeId.entries()) {
+      const progress = (nowTick - receivedTick) / durationTicks;
+
+      if (!Number.isFinite(progress) || progress < 0 || progress > 1) {
+        continue;
+      }
+
+      pulses.push({
+        nodeId,
+        progress,
+        receivedTick,
+      });
+    }
+
+    return pulses.sort((left, right) => left.nodeId.localeCompare(right.nodeId));
+  }
+
   clearSchedulerState() {
     if (typeof this.scheduler.clear === "function") {
       this.scheduler.clear();
@@ -259,6 +285,7 @@ export class Runtime {
     this.activeEvents.clear();
     this.activeEventKeysByNodeId.clear();
     this.activeEventKeysByEdgeId.clear();
+    this.nodePulseTicksByNodeId.clear();
   }
 
   refreshGraphState() {
@@ -780,7 +807,9 @@ export class Runtime {
       return [];
     }
 
-    if (node.type === "output") {
+    this.nodePulseTicksByNodeId.set(node.id, event.tick);
+
+    if (node.type === "out") {
       return [createOutputEvent(event, node.id)];
     }
 

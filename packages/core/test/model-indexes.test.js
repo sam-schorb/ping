@@ -19,7 +19,7 @@ test("indexes stay correct for nodes, edges, and connected derived ports", () =>
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         pos: { x: 3, y: 0 },
         rot: 0,
         params: {},
@@ -61,14 +61,14 @@ test("one cable per port is enforced through the indexes", () => {
       },
       {
         id: "node-output-a",
-        type: "output",
+        type: "out",
         pos: { x: 3, y: 0 },
         rot: 0,
         params: {},
       },
       {
         id: "node-output-b",
-        type: "output",
+        type: "out",
         pos: { x: 3, y: 2 },
         rot: 0,
         params: {},

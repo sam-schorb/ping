@@ -22,6 +22,37 @@ test("constructor load defaults missing rot and params on valid snapshots", asyn
   });
 });
 
+test("load canonicalizes legacy output nodes to out", () => {
+  const model = new GraphModel({
+    getNodeDefinition,
+    snapshot: {
+      nodes: [
+        {
+          id: "node-output",
+          type: "output",
+          pos: { x: 2, y: 3 },
+          rot: 0,
+          params: {},
+        },
+      ],
+      edges: [],
+    },
+  });
+
+  assert.deepEqual(model.getSnapshot(), {
+    nodes: [
+      {
+        id: "node-output",
+        type: "out",
+        pos: { x: 2, y: 3 },
+        rot: 0,
+        params: {},
+      },
+    ],
+    edges: [],
+  });
+});
+
 for (const [fixtureName, expectedCode] of [
   ["invalid-unknown-type.json", "MODEL_UNKNOWN_NODE_TYPE"],
   ["invalid-non-integer-pos.json", "MODEL_INVALID_POSITION"],
@@ -105,7 +136,7 @@ test("snapshots preserve insertion order and remain stable across equivalent bui
       payload: {
         node: {
           id: "node-b",
-          type: "output",
+          type: "out",
           pos: { x: 5, y: 0 },
           rot: 0,
           params: {},

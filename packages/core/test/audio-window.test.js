@@ -12,7 +12,7 @@ import {
   loadAudioFixture,
 } from "./helpers/audio-fixtures.js";
 
-test("audio bridge queries the runtime using future half-open windows and schedules matching events", async () => {
+test("audio bridge queries the runtime from the current clock boundary and schedules matching events", async () => {
   const fixture = await loadAudioFixture("valid-min.json");
   const runtime = createAudioRuntimeStub(fixture.events);
   const dough = createFakeDough();
@@ -34,7 +34,7 @@ test("audio bridge queries the runtime using future half-open windows and schedu
   await flushAsyncWork();
   await dough.emitClock(fixture.clock);
 
-  assert.deepEqual(runtime.queries, [[1.25, 1.75]]);
+  assert.deepEqual(runtime.queries, [[1, 1.75]]);
   assert.equal(sampleLoads.length, 1);
   assert.equal(dough.calls.length, 1);
   assert.deepEqual(dough.calls[0], {
@@ -112,8 +112,52 @@ test("audio bridge waits for sample mappings to load before scheduling clock win
   resolveLoadSamples();
   await clockPromise;
 
-  assert.deepEqual(runtime.queries, [[1.25, 1.75]]);
+  assert.deepEqual(runtime.queries, [[1, 1.75]]);
   assert.equal(dough.calls.length, 1);
+});
+
+test("audio bridge does not skip the first output event sitting inside the lookahead band", async () => {
+  const runtime = createRuntime(await loadRuntimeFixture("valid-min.json"));
+  const dough = createFakeDough();
+  const bridge = createAudioBridge({
+    runtime,
+    registry: createRegistryApi(),
+    dough,
+    transport: {
+      bpm: 60,
+      ticksPerBeat: 1,
+      originSec: 0,
+    },
+    config: {
+      lookaheadSec: 0.06,
+      horizonSec: 0.1,
+    },
+    getSlots: () => createFixtureSlots(),
+    loadSamples: async () => {},
+    logger: { warn() {} },
+  });
+
+  bridge.start();
+  await flushAsyncWork();
+  await dough.emitClock({
+    t0: 0.2,
+    t1: 0.45,
+    latency: 0.05,
+  });
+
+  assert.deepEqual(dough.calls, [
+    {
+      time: 0.5,
+      dough: "play",
+      s: "1",
+      n: 0,
+      speed: 1,
+      end: 1,
+      crush: 16,
+      hpf: 100,
+      lpf: 12000,
+    },
+  ]);
 });
 
 test("audio bridge composes onto the real runtime output contract", async () => {

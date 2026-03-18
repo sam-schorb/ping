@@ -141,6 +141,22 @@ function clampValue(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+const NODE_PULSE_SCALE_DELTA = 0.04;
+
+function getNodePulseScale(progress, cameraScale) {
+  const zoomScale = Number.isFinite(cameraScale) && cameraScale > 0 ? cameraScale : 1;
+  const pulseDelta = clampValue(NODE_PULSE_SCALE_DELTA * zoomScale ** -0.18, 0.03, 0.05);
+  return 1 + pulseDelta * Math.sin(Math.PI * clampValue(progress, 0, 1));
+}
+
+function createScaleTransform(centerX, centerY, scale) {
+  if (!Number.isFinite(scale) || Math.abs(scale - 1) < 1e-6) {
+    return "";
+  }
+
+  return `translate(${centerX} ${centerY}) scale(${scale}) translate(${-centerX} ${-centerY})`;
+}
+
 function scaleVisual(base, cameraScale, { power = 0.35, min = base * 0.75, max = base * 1.6 } = {}) {
   return clampValue(base * cameraScale ** power, min, max);
 }
@@ -663,6 +679,7 @@ function renderNode(
   hover,
   groupSelection,
   previewState,
+  nodePulseState,
 ) {
   const renderNodeModel = getRenderableNode(node, previewState);
   const definition = getResolvedNodeDefinition(snapshot, renderNodeModel, registry);
@@ -675,7 +692,8 @@ function renderNode(
   const isGroupSelected = groupSelection.nodeIds.includes(node.id);
   const isHovered = hover.kind === "node" && hover.nodeId === node.id;
   const rawLabel = node.name || definition.label || node.type;
-  const label = escapeHtml(rawLabel);
+  const rawCanvasLabel = node.name || definition.canvasLabel || rawLabel;
+  const canvasLabel = escapeHtml(rawCanvasLabel);
   const labelVisible = shouldShowNodeLabel(screenBox, config, zoomMetrics);
   const iconLayout = getNodeIconLayout(screenBox, config, zoomMetrics, labelVisible);
   const nodeCornerRadiusPx = Math.min(
@@ -684,6 +702,13 @@ function renderNode(
     screenBox.height * 0.22,
   );
   const showSelectionRing = isSelected || isGroupSelected;
+  const pulseProgress = nodePulseState ? clampValue(nodePulseState.progress, 0, 1) : null;
+  const pulseScale = pulseProgress === null ? 1 : getNodePulseScale(pulseProgress, camera?.scale);
+  const bodyTransform = createScaleTransform(
+    screenBox.x + screenBox.width / 2,
+    screenBox.y + screenBox.height / 2,
+    pulseScale,
+  );
   const selectionRingPath = createRoundedRectPath(
     screenBox.x,
     screenBox.y,
@@ -776,62 +801,69 @@ function renderNode(
       class="ping-editor__node-group"
       data-node-id="${escapeHtml(node.id)}"
       data-testid="node-${escapeHtml(node.id)}"
-      aria-label="${escapeHtml(label)}"
+      aria-label="${escapeHtml(rawLabel)}"
     >
-      ${
-        showSelectionRing
-          ? `
-            <path
-              class="ping-editor__node-selection-ring ${isSelected ? "is-selected" : ""} ${isGroupSelected ? "is-group-selected" : ""}"
-              d="${selectionRingPath}"
-              fill="none"
-              stroke="${selectionHighlightColor}"
-              stroke-width="${zoomMetrics.nodeSelectionStrokePx}"
-              pointer-events="none"
-              data-node-id="${escapeHtml(node.id)}"
-              data-testid="node-selection-ring-${escapeHtml(node.id)}"
-            />
-          `
-          : ""
-      }
-      <rect
-        class="ping-editor__node ${isHovered ? "is-hovered" : ""}"
-        x="${screenBox.x}"
-        y="${screenBox.y}"
-        width="${screenBox.width}"
-        height="${screenBox.height}"
-        rx="${nodeCornerRadiusPx}"
-        fill="${definition.category === "Unknown" ? "#d8d3cb" : definition.color ?? config.node.fill}"
-        stroke="${showSelectionRing ? "none" : config.node.stroke}"
-        stroke-width="${showSelectionRing ? 0 : zoomMetrics.nodeStrokePx}"
-        data-node-id="${escapeHtml(node.id)}"
-      />
-      <svg
-        x="${iconLayout.x}"
-        y="${iconLayout.y}"
-        width="${iconLayout.size}"
-        height="${iconLayout.size}"
-        viewBox="${icon.viewBox}"
-        class="ping-editor__node-icon"
-        pointer-events="none"
+      <g
+        class="ping-editor__node-body-group ${pulseProgress === null ? "" : "is-pulsing"}"
+        ${bodyTransform ? `transform="${bodyTransform}"` : ""}
+        ${pulseProgress === null ? "" : `data-pulse-progress="${pulseProgress.toFixed(3)}"`}
+        ${pulseProgress === null ? "" : `data-pulse-scale="${pulseScale.toFixed(4)}"`}
       >
-        <path d="${icon.path}" fill="none" stroke="${config.node.stroke}" stroke-width="${zoomMetrics.iconStrokeWidthPx}" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-      ${
-        labelVisible
-          ? `
-            <text
-              class="ping-editor__node-label"
-              x="${screenBox.x + zoomMetrics.nodePaddingPx}"
-              y="${screenBox.y + screenBox.height - zoomMetrics.nodePaddingPx}"
-              fill="${config.node.text}"
-              font-size="${zoomMetrics.labelFontPx}"
-            >
-              ${label}
-            </text>
-          `
-          : ""
-      }
+        ${
+          showSelectionRing
+            ? `
+              <path
+                class="ping-editor__node-selection-ring ${isSelected ? "is-selected" : ""} ${isGroupSelected ? "is-group-selected" : ""}"
+                d="${selectionRingPath}"
+                fill="none"
+                stroke="${selectionHighlightColor}"
+                stroke-width="${zoomMetrics.nodeSelectionStrokePx}"
+                pointer-events="none"
+                data-node-id="${escapeHtml(node.id)}"
+                data-testid="node-selection-ring-${escapeHtml(node.id)}"
+              />
+            `
+            : ""
+        }
+        <rect
+          class="ping-editor__node ${isHovered ? "is-hovered" : ""}"
+          x="${screenBox.x}"
+          y="${screenBox.y}"
+          width="${screenBox.width}"
+          height="${screenBox.height}"
+          rx="${nodeCornerRadiusPx}"
+          fill="${definition.category === "Unknown" ? "#d8d3cb" : definition.color ?? config.node.fill}"
+          stroke="${showSelectionRing ? "none" : config.node.stroke}"
+          stroke-width="${showSelectionRing ? 0 : zoomMetrics.nodeStrokePx}"
+          data-node-id="${escapeHtml(node.id)}"
+        />
+        <svg
+          x="${iconLayout.x}"
+          y="${iconLayout.y}"
+          width="${iconLayout.size}"
+          height="${iconLayout.size}"
+          viewBox="${icon.viewBox}"
+          class="ping-editor__node-icon"
+          pointer-events="none"
+        >
+          <path d="${icon.path}" fill="none" stroke="${config.node.stroke}" stroke-width="${zoomMetrics.iconStrokeWidthPx}" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        ${
+          labelVisible
+            ? `
+              <text
+                class="ping-editor__node-label"
+                x="${screenBox.x + zoomMetrics.nodePaddingPx}"
+                y="${screenBox.y + screenBox.height - zoomMetrics.nodePaddingPx}"
+                fill="${config.node.text}"
+                font-size="${zoomMetrics.labelFontPx}"
+              >
+                ${canvasLabel}
+              </text>
+            `
+            : ""
+        }
+      </g>
       ${ports.join("")}
       <title>${escapeHtml(getNodeTooltipText(renderNodeModel, definition, rawLabel))}</title>
       <desc>${escapeHtml(`World ${worldBounds.x},${worldBounds.y}`)}</desc>
@@ -947,6 +979,7 @@ export function renderSvgMarkup({
   drag,
   nodePositionOverrides,
   thumbs,
+  nodePulseStates,
   previewRoute,
   boxSelection,
 }) {
@@ -963,6 +996,9 @@ export function renderSvgMarkup({
   );
   const hiddenThumbEdgeIds = createHiddenThumbEdgeIds(snapshot, previewState);
   const zoomMetrics = createZoomMetrics(camera, config);
+  const nodePulseStateByNodeId = new Map(
+    (nodePulseStates ?? []).map((entry) => [entry.nodeId, entry]),
+  );
 
   const nodeEntries =
     previewNodeIds.size > 0
@@ -1014,6 +1050,7 @@ export function renderSvgMarkup({
               hover,
               groupSelection,
               previewState,
+              nodePulseStateByNodeId.get(node.id),
             ),
           )
           .join("")}

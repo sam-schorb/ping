@@ -2,14 +2,14 @@
   "nodes": [
     {
       "id": "output-a",
-      "type": "output",
+      "type": "out",
       "pos": { "x": 0, "y": 0 },
       "rot": 0,
       "params": {}
     },
     {
       "id": "output-b",
-      "type": "output",
+      "type": "out",
       "pos": { "x": 4, "y": 0 },
       "rot": 0,
       "params": {}

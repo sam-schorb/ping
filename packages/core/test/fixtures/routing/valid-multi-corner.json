@@ -9,7 +9,7 @@
     },
     {
       "id": "node-output",
-      "type": "output",
+      "type": "out",
       "pos": { "x": 6, "y": 4 },
       "rot": 0,
       "params": {}

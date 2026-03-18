@@ -9,7 +9,7 @@ test("buildPalette returns a stable visible palette order with required UI field
 
   assert.deepEqual(paletteTypes, [
     "pulse",
-    "output",
+    "out",
     "mux",
     "demux",
     "switch",

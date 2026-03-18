@@ -18,6 +18,9 @@ const DEFAULT_RUNTIME_API = Object.freeze({
   getThumbState() {
     return [];
   },
+  getNodePulseState() {
+    return [];
+  },
   getMetrics() {
     return { lastTickProcessed: 0 };
   },
@@ -91,14 +94,77 @@ export function Editor({
     }
 
     editor.setSnapshot(snapshot);
+  }, [snapshot]);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
     editor.setRoutes(routes);
+  }, [routes]);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
     editor.setDiagnostics(diagnostics);
+  }, [diagnostics]);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
     editor.setPalette(palette);
+  }, [palette]);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
     editor.setSelection(selection);
+  }, [selection]);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
     editor.setHistory?.({ canUndo, canRedo });
+  }, [canRedo, canUndo]);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
     editor.setSlots?.(slots);
+  }, [slots]);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+
+    if (!editor) {
+      return;
+    }
+
     editor.setSidebarExtensions?.(sidebarExtensions);
-  }, [canRedo, canUndo, diagnostics, palette, routes, selection, sidebarExtensions, slots, snapshot]);
+  }, [sidebarExtensions]);
 
   useLayoutEffect(() => {
     const editor = editorRef.current;

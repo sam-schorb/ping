@@ -9,14 +9,14 @@
     },
     {
       "id": "node-output-a",
-      "type": "output",
+      "type": "out",
       "pos": { "x": 4, "y": -2 },
       "rot": 0,
       "params": {}
     },
     {
       "id": "node-output-b",
-      "type": "output",
+      "type": "out",
       "pos": { "x": 4, "y": 2 },
       "rot": 0,
       "params": {}

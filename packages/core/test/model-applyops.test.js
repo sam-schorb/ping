@@ -32,7 +32,7 @@ test("applyOps supports the full graph op set and emits change events as ops onl
       payload: {
         node: {
           id: "node-output",
-          type: "output",
+          type: "out",
           pos: { x: 4, y: 0 },
           rot: 0,
           params: {},
@@ -263,7 +263,7 @@ test("removing a node automatically removes connected edges", () => {
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         pos: { x: 3, y: 0 },
         rot: 0,
         params: {},
@@ -286,7 +286,7 @@ test("removing a node automatically removes connected edges", () => {
     nodes: [
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         pos: { x: 3, y: 0 },
         rot: 0,
         params: {},
@@ -308,7 +308,7 @@ test("non-integer corner coordinates are rejected", () => {
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         pos: { x: 3, y: 0 },
         rot: 0,
         params: {},

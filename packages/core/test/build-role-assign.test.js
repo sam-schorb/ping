@@ -27,7 +27,7 @@ test("buildGraph assigns edge roles from registry-defined input roles", () => {
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         pos: { x: 8, y: 0 },
         rot: 0,
         params: {},

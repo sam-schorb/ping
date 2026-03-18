@@ -28,7 +28,7 @@ test("buildGraph flattens groups, preserves group metadata, and rewires control 
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         pos: { x: 8, y: 0 },
         rot: 0,
         params: {},

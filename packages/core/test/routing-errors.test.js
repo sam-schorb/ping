@@ -46,7 +46,7 @@ test("unknown node layouts surface ROUTE_ANCHOR_FAIL", () => {
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         pos: { x: 4, y: 0 },
         rot: 0,
         params: {},

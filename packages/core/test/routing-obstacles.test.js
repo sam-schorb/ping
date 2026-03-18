@@ -32,7 +32,7 @@ function createSnapshot(blockerPos) {
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         pos: { x: 12, y: 0 },
         rot: 0,
         params: {},

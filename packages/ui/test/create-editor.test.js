@@ -92,7 +92,7 @@ test("editor renders palette, fallback routes, diagnostics, and sample controls"
       snapshot: {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
-          { id: "node-b", type: "output", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -192,6 +192,57 @@ test("editor renders the canvas background as a single-color dot grid", async ()
     assert.equal(Number(gridDot.getAttribute("cx")), Number(gridPattern.getAttribute("width")) / 2);
     assert.equal(Number(gridDot.getAttribute("cy")), Number(gridPattern.getAttribute("height")) / 2);
     assert.equal(grid.querySelector("line"), null);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("editor abbreviates comparison node labels only on the node face", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-gt", type: "gtp", pos: { x: 2, y: 2 }, rot: 0, params: { param: 4 } },
+          { id: "node-gte", type: "gtep", pos: { x: 8, y: 2 }, rot: 0, params: { param: 4 } },
+          { id: "node-lt", type: "ltp", pos: { x: 14, y: 2 }, rot: 0, params: { param: 4 } },
+          { id: "node-lte", type: "ltep", pos: { x: 20, y: 2 }, rot: 0, params: { param: 4 } },
+        ],
+        edges: [],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    assert.equal(
+      harness.query("node-node-gt").querySelector(".ping-editor__node-label")?.textContent.trim(),
+      "GT",
+    );
+    assert.equal(harness.query("node-node-gt").getAttribute("aria-label"), "Greater Than");
+    assert.equal(
+      harness.query("node-node-gte").querySelector(".ping-editor__node-label")?.textContent.trim(),
+      "GTE",
+    );
+    assert.equal(
+      harness.query("node-node-gte").getAttribute("aria-label"),
+      "Greater Than Equal",
+    );
+    assert.equal(
+      harness.query("node-node-lt").querySelector(".ping-editor__node-label")?.textContent.trim(),
+      "LT",
+    );
+    assert.equal(harness.query("node-node-lt").getAttribute("aria-label"), "Less Than");
+    assert.equal(
+      harness.query("node-node-lte").querySelector(".ping-editor__node-label")?.textContent.trim(),
+      "LTE",
+    );
+    assert.equal(
+      harness.query("node-node-lte").getAttribute("aria-label"),
+      "Less Than Equal",
+    );
 
     harness.unmount();
   } finally {
@@ -445,6 +496,19 @@ test("tempo slider updates without replacing its DOM node", async () => {
     const harness = createEditorHarness();
     await harness.flush();
 
+    harness.editor.setSidebarExtensions({
+      tabs: [
+        {
+          id: "save",
+          label: "project",
+          markup: "<div>v1</div>",
+          testId: "tab-save",
+        },
+      ],
+      actions: [],
+    });
+    await harness.flush();
+
     const tempoInput = harness.query("tempo-input");
     tempoInput.value = "42";
     tempoInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
@@ -456,6 +520,22 @@ test("tempo slider updates without replacing its DOM node", async () => {
     assert.equal(harness.outputs.at(-1)?.payload?.bpm, 42);
 
     harness.editor.setTempo(24);
+    await harness.flush();
+
+    assert.equal(harness.query("tempo-input"), tempoInput);
+    assert.equal(tempoInput.value, "24");
+
+    harness.editor.setSidebarExtensions({
+      tabs: [
+        {
+          id: "save",
+          label: "project",
+          markup: "<div>v2</div>",
+          testId: "tab-save",
+        },
+      ],
+      actions: [],
+    });
     await harness.flush();
 
     assert.equal(harness.query("tempo-input"), tempoInput);
@@ -605,7 +685,7 @@ test("shift-click grouping includes the original selected node", async () => {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
           { id: "node-b", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
-          { id: "node-c", type: "output", pos: { x: 10, y: 2 }, rot: 0, params: {} },
+          { id: "node-c", type: "out", pos: { x: 10, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -745,6 +825,53 @@ test("editor renders add-node categories as a fixed stacked header instead of a 
       styles,
       /\.ping-editor__menu-item\s*\{[\s\S]*border-radius:\s*16px;[\s\S]*background:\s*var\(--ping-chrome-card-strong\);/,
     );
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("add-node menu stays clickable through viewport-only rerenders", async () => {
+  const dom = setupDom();
+
+  try {
+    const runtime = createRuntimeStub();
+    const harness = createEditorHarness({
+      runtime: {
+        ...runtime,
+        pulsePhase: 0,
+        getNodePulseState() {
+          this.pulsePhase = (this.pulsePhase ?? 0) + 0.25;
+          return [{ nodeId: "node-a", progress: this.pulsePhase % 1, receivedTick: 1 }];
+        },
+      },
+      snapshot: {
+        nodes: [{ id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } }],
+        edges: [],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    harness.click(harness.container.querySelector('[data-action="open-menu"]'));
+    await harness.flush();
+
+    const menu = harness.query("palette-menu");
+    const addItemBefore = harness.query("palette-menu-add");
+    assert.ok(menu);
+    assert.ok(addItemBefore);
+
+    await harness.flush(2);
+
+    const addItemAfter = harness.query("palette-menu-add");
+    assert.equal(addItemAfter, addItemBefore);
+
+    harness.click(addItemAfter);
+    await harness.flush();
+
+    assert.ok(harness.query("node-node-1"));
+    assert.equal(harness.container.querySelector('[data-testid="palette-menu"]'), null);
 
     harness.unmount();
   } finally {
@@ -1083,7 +1210,7 @@ test("editor can create nodes, connect, move, rotate, and delete", async () => {
     await harness.flush();
 
     await createNodeFromMenu(harness, "pulse");
-    await createNodeFromMenu(harness, "output");
+    await createNodeFromMenu(harness, "out");
 
     assert.ok(harness.query("node-node-1"));
     assert.ok(harness.query("node-node-2"));
@@ -1296,7 +1423,7 @@ test("selecting a node keeps viewport focus so Backspace deletes the node and it
       snapshot: {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
-          { id: "node-b", type: "output", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -1345,7 +1472,7 @@ test("pointer-down on a cable selects it instead of starting marquee selection",
       snapshot: {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
-          { id: "node-b", type: "output", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -1387,7 +1514,7 @@ test("plain canvas drag marquee-selects nodes without panning the viewport", asy
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
           { id: "node-b", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
-          { id: "node-c", type: "output", pos: { x: 12, y: 2 }, rot: 0, params: {} },
+          { id: "node-c", type: "out", pos: { x: 12, y: 2 }, rot: 0, params: {} },
         ],
         edges: [],
         groups: {},
@@ -1437,7 +1564,7 @@ test("shift-drag marquee adds nodes to the existing selection", async () => {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
           { id: "node-b", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
-          { id: "node-c", type: "output", pos: { x: 12, y: 2 }, rot: 0, params: {} },
+          { id: "node-c", type: "out", pos: { x: 12, y: 2 }, rot: 0, params: {} },
         ],
         edges: [],
         groups: {},
@@ -1484,7 +1611,7 @@ test("dragging one node in a multi-selection moves the entire selected set", asy
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
           { id: "node-b", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
-          { id: "node-c", type: "output", pos: { x: 12, y: 2 }, rot: 0, params: {} },
+          { id: "node-c", type: "out", pos: { x: 12, y: 2 }, rot: 0, params: {} },
         ],
         edges: [],
         groups: {},
@@ -1562,7 +1689,7 @@ test("Backspace deletes every node in the current multi-selection", async () => 
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
           { id: "node-b", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
-          { id: "node-c", type: "output", pos: { x: 10, y: 2 }, rot: 0, params: {} },
+          { id: "node-c", type: "out", pos: { x: 10, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -1627,7 +1754,7 @@ test("copy and paste duplicate a multi-selection with internal edges preserved",
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
           { id: "node-b", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
-          { id: "node-c", type: "output", pos: { x: 12, y: 2 }, rot: 0, params: {} },
+          { id: "node-c", type: "out", pos: { x: 12, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -1699,7 +1826,7 @@ test("cut removes the selected nodes and paste restores a duplicated copy", asyn
       snapshot: {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
-          { id: "node-b", type: "output", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -1792,7 +1919,7 @@ test("editor supports drag-based cable creation with manual corners", async () =
     await harness.flush();
 
     await createNodeFromMenu(harness, "pulse");
-    await createNodeFromMenu(harness, "output");
+    await createNodeFromMenu(harness, "out");
 
     const viewport = harness.query("editor-viewport");
     const outputPort = harness.query("port-node-1-out-0");
@@ -1837,7 +1964,7 @@ test("editor does not pan the canvas while an edge preview is active", async () 
     await harness.flush();
 
     await createNodeFromMenu(harness, "pulse");
-    await createNodeFromMenu(harness, "output");
+    await createNodeFromMenu(harness, "out");
 
     const outputPort = harness.query("port-node-1-out-0");
     const before = getPortScreenPoint(outputPort);
@@ -1872,7 +1999,7 @@ test("editor completes an active edge preview when the target port is clicked", 
     await harness.flush();
 
     await createNodeFromMenu(harness, "pulse");
-    await createNodeFromMenu(harness, "output");
+    await createNodeFromMenu(harness, "out");
 
     const viewport = harness.query("editor-viewport");
     const outputPort = harness.query("port-node-1-out-0");
@@ -1909,7 +2036,7 @@ test("editor normalizes reverse-grab cable creation to output-to-input", async (
     await harness.flush();
 
     await createNodeFromMenu(harness, "pulse");
-    await createNodeFromMenu(harness, "output");
+    await createNodeFromMenu(harness, "out");
 
     const outputPort = harness.query("port-node-1-out-0");
     const inputPort = harness.query("port-node-2-in-0");
@@ -1945,7 +2072,7 @@ test("editor supports grouping, diagnostics focus, sample slot updates, and rese
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
           { id: "node-b", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
-          { id: "node-c", type: "output", pos: { x: 10, y: 2 }, rot: 0, params: {} },
+          { id: "node-c", type: "out", pos: { x: 10, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -2084,7 +2211,7 @@ test("editor hides thumbs on edges connected to a dragged node until the drag co
       snapshot: {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
-          { id: "node-b", type: "output", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -2139,7 +2266,7 @@ test("diagnostic focus selects the target without recentering the camera", async
       snapshot: {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
-          { id: "node-b", type: "output", pos: { x: 20, y: 14 }, rot: 0, params: {} },
+          { id: "node-b", type: "out", pos: { x: 20, y: 14 }, rot: 0, params: {} },
         ],
         edges: [],
         groups: {},
@@ -2271,7 +2398,7 @@ test("editor uses default canvas cursor and crosshair during cable creation", as
       snapshot: {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
-          { id: "node-b", type: "output", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -2316,7 +2443,7 @@ test("editor uses crosshair for box selection and move for corner drags", async 
       snapshot: {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
-          { id: "node-b", type: "output", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -2436,7 +2563,7 @@ test("zooming in scales graph chrome while keeping hit targets stable", async ()
       snapshot: {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
-          { id: "node-b", type: "output", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -2505,6 +2632,72 @@ test("zooming in scales graph chrome while keeping hit targets stable", async ()
   }
 });
 
+test("pulsed nodes scale the body chrome without moving ports and keep the normal stroke color", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-a",
+            from: { nodeId: "node-a", portSlot: 0 },
+            to: { nodeId: "node-b", portSlot: 0 },
+            manualCorners: [],
+          },
+        ],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const beforeNode = harness.query("node-node-a");
+    const beforeBodyGroup = beforeNode.querySelector(".ping-editor__node-body-group");
+    const beforePulseInputPoint = getPortScreenPoint(harness.query("port-node-a-in-0"));
+    const beforePulseOutputPoint = getPortScreenPoint(harness.query("port-node-a-out-0"));
+
+    assert.equal(beforeBodyGroup.getAttribute("transform"), null);
+    assert.equal(beforeBodyGroup.getAttribute("data-pulse-scale"), null);
+
+    harness.runtime.nodePulses = [{ nodeId: "node-a", progress: 0.5, receivedTick: 1 }];
+    await harness.flush();
+
+    const pulsedNode = harness.query("node-node-a");
+    const pulsedBodyGroup = pulsedNode.querySelector(".ping-editor__node-body-group");
+    const pulsedNodeRect = pulsedNode.querySelector(".ping-editor__node");
+    const afterPulseInputPoint = getPortScreenPoint(harness.query("port-node-a-in-0"));
+    const afterPulseOutputPoint = getPortScreenPoint(harness.query("port-node-a-out-0"));
+
+    assert.match(pulsedBodyGroup.getAttribute("transform"), /scale\(1\.04\)/);
+    assert.equal(Number(pulsedBodyGroup.getAttribute("data-pulse-scale")), 1.04);
+    assert.equal(Number(pulsedBodyGroup.getAttribute("data-pulse-progress")), 0.5);
+    assert.equal(pulsedNodeRect.getAttribute("stroke"), DEFAULT_UI_CONFIG.node.stroke);
+    assert.deepEqual(afterPulseInputPoint, beforePulseInputPoint);
+    assert.deepEqual(afterPulseOutputPoint, beforePulseOutputPoint);
+
+    for (let index = 0; index < 6; index += 1) {
+      dispatchWheel(dom.window, harness.query("editor-viewport"), {
+        deltaY: 40,
+        ctrlKey: true,
+        clientX: 320,
+        clientY: 240,
+      });
+      await harness.flush();
+    }
+
+    const zoomedOutBodyGroup = harness.query("node-node-a").querySelector(".ping-editor__node-body-group");
+    assert.ok(Number(zoomedOutBodyGroup.getAttribute("data-pulse-scale")) > 1.04);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("selected nodes drop the black body stroke while the highlight stays on the same path", async () => {
   const dom = setupDom();
 
@@ -2513,7 +2706,7 @@ test("selected nodes drop the black body stroke while the highlight stays on the
       snapshot: {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
-          { id: "node-b", type: "output", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {
@@ -2562,6 +2755,18 @@ test("selected nodes drop the black body stroke while the highlight stays on the
       createRoundedRectPath(nodeX, nodeY, nodeWidth, nodeHeight, nodeRadius),
     );
     assert.equal(Number(selectionRing.getAttribute("stroke-width")), nodeStrokeWidth * 3);
+
+    harness.runtime.nodePulses = [{ nodeId: "node-a", progress: 0.5, receivedTick: 1 }];
+    await harness.flush();
+
+    const pulsedSelectedNode = harness.query("node-node-a");
+    const pulsedSelectedNodeRect = pulsedSelectedNode.querySelector(".ping-editor__node");
+    const pulsedSelectionRing = harness.query("node-selection-ring-node-a");
+    const pulsedBodyGroup = pulsedSelectedNode.querySelector(".ping-editor__node-body-group");
+
+    assert.match(pulsedBodyGroup.getAttribute("transform"), /scale\(1\.04\)/);
+    assert.equal(pulsedSelectedNodeRect.getAttribute("stroke"), "none");
+    assert.equal(pulsedSelectionRing.getAttribute("stroke"), DEFAULT_UI_CONFIG.selection.highlightColor);
 
     harness.unmount();
   } finally {
@@ -2630,7 +2835,7 @@ test("editor supports menu creation, inspect rename/param edits, and context-men
     assert.ok(harness.query("palette-menu-category-basic"));
     assert.equal(harness.query("palette-menu-category-basic").getAttribute("aria-pressed"), "true");
     assert.ok(harness.query("palette-menu-pulse"));
-    assert.ok(harness.query("palette-menu-output"));
+    assert.ok(harness.query("palette-menu-out"));
     assert.ok(harness.query("palette-menu-add"));
     assert.equal(harness.container.querySelector(".ping-editor__menu-item-copy"), null);
     assert.equal(harness.container.querySelector('[data-testid="palette-menu-mux"]'), null);
@@ -2966,7 +3171,7 @@ test("editor renders a box-selection overlay during shift-drag", async () => {
         nodes: [
           { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
           { id: "node-b", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
-          { id: "node-c", type: "output", pos: { x: 10, y: 2 }, rot: 0, params: {} },
+          { id: "node-c", type: "out", pos: { x: 10, y: 2 }, rot: 0, params: {} },
         ],
         edges: [
           {

@@ -188,7 +188,7 @@ export function createAudioBridge(opts) {
 
     lastClockT1 = clockWindow.t1;
 
-    const tStartTick = secondsToTick(clockWindow.t1 + config.lookaheadSec, transport);
+    const tStartTick = secondsToTick(clockWindow.t1, transport);
     const tEndTick = secondsToTick(
       clockWindow.t1 + config.lookaheadSec + config.horizonSec,
       transport,

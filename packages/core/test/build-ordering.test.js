@@ -27,14 +27,14 @@ test("buildGraph preserves node order, edge order, and adjacency order", () => {
       },
       {
         id: "node-output-b",
-        type: "output",
+        type: "out",
         pos: { x: 8, y: -2 },
         rot: 0,
         params: {},
       },
       {
         id: "node-output-a",
-        type: "output",
+        type: "out",
         pos: { x: 8, y: 2 },
         rot: 0,
         params: {},

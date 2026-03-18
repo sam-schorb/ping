@@ -25,7 +25,7 @@ test("missing edges and missing node types warn without hard-failing performance
       nodes: [
         {
           id: "node-output",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,
@@ -88,7 +88,7 @@ test("late events are dropped with RUNTIME_LATE_EVENT warnings", () => {
       nodes: [
         {
           id: "node-output",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,

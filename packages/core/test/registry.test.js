@@ -13,7 +13,7 @@ test("NODE_REGISTRY includes the complete built-in node set and validates cleanl
 
   assert.deepEqual(types, [
     "pulse",
-    "output",
+    "out",
     "mux",
     "demux",
     "switch",
@@ -57,11 +57,20 @@ test("buildRegistryIndex and getNodeDefinition expose registry lookup helpers", 
   const index = buildRegistryIndex();
   const pulse = getNodeDefinition("pulse", index);
   const group = getNodeDefinition("group", index);
+  const out = getNodeDefinition("out", index);
+  const gtep = getNodeDefinition("gtep", index);
+  const ltep = getNodeDefinition("ltep", index);
 
   assert.equal(index.size, NODE_REGISTRY.length);
   assert.equal(pulse?.label, "Pulse");
+  assert.equal(out?.label, "Out");
+  assert.equal(gtep?.label, "Greater Than Equal");
+  assert.equal(gtep?.canvasLabel, "GTE");
+  assert.equal(ltep?.label, "Less Than Equal");
+  assert.equal(ltep?.canvasLabel, "LTE");
   assert.equal(group?.layout, "custom");
   assert.equal(group?.hidden, true);
+  assert.equal(getNodeDefinition("output", index)?.type, "out");
   assert.equal(getNodeDefinition("multiplexer", index)?.type, "mux");
   assert.equal(getNodeDefinition("demultiplexer", index)?.type, "demux");
   assert.equal(getNodeDefinition("does-not-exist", index), undefined);

@@ -55,7 +55,7 @@ test("pulse sources emit on phase-locked fractional grids when a rate multiplier
         },
         {
           id: "node-output",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,

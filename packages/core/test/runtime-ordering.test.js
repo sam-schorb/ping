@@ -45,7 +45,7 @@ test("same-tick signal ordering stays deterministic for identical runs", () => {
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         param: 1,
         state: {},
         inputs: 1,
@@ -116,7 +116,7 @@ test("pulse rate multipliers stay phase-locked on shared master-clock downbeats"
         },
         {
           id: "node-output",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,
@@ -205,7 +205,7 @@ test("control changes on pulse nodes snap the next pulse to the future rate latt
         },
         {
           id: "node-output",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,
@@ -352,7 +352,7 @@ test("constant nodes preserve effect params through to output events", () => {
         },
         {
           id: "node-output",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,
@@ -432,7 +432,7 @@ test("bare constant nodes seed control-only branches so effect params initialize
         },
         {
           id: "node-output",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,
@@ -494,7 +494,7 @@ test("bare constant nodes do not auto-emit onto signal outputs", () => {
         },
         {
           id: "node-output",
-          type: "output",
+          type: "out",
           param: 1,
           state: {},
           inputs: 1,

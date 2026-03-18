@@ -32,7 +32,7 @@ function createSnapshot(blockerPos) {
       },
       {
         id: "node-output",
-        type: "output",
+        type: "out",
         pos: { x: 12, y: 0 },
         rot: 0,
         params: {},
@@ -81,7 +81,7 @@ function createMultiEdgeSnapshot() {
       },
       {
         id: "node-a-out",
-        type: "output",
+        type: "out",
         pos: { x: 12, y: 0 },
         rot: 0,
         params: {},
@@ -95,7 +95,7 @@ function createMultiEdgeSnapshot() {
       },
       {
         id: "node-b-out",
-        type: "output",
+        type: "out",
         pos: { x: 12, y: 10 },
         rot: 0,
         params: {},

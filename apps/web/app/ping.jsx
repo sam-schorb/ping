@@ -21,7 +21,7 @@ import {
 } from "@ping/core";
 import { Editor } from "@ping/ui/react";
 import { Dough, doughsamples } from "dough-synth/dough.js";
-import { startTransition, useEffect, useRef, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 const REGISTRY_INDEX = buildRegistryIndex();
 const REGISTRY_API = Object.freeze({
@@ -1103,34 +1103,37 @@ export function Ping() {
     event.target.value = "";
   }
 
-  let projectJson = "";
-
-  try {
-    projectJson = JSON.stringify(
-      serialiseProject({
-        graph: snapshot,
-        samples: slots,
-        settings: { tempo },
-        project: { name: "Ping Project" },
-      }),
-      null,
-      2,
-    );
-  } catch (error) {
-    projectJson = JSON.stringify({ error: error.message }, null, 2);
-  }
-
-  const sidebarExtensions = {
-    tabs: [
-      {
-        id: "save",
-        label: "project",
-        markup: buildProjectJsonPanelMarkup(projectJson),
-        testId: "tab-save",
-      },
-    ],
-    actions: [],
-  };
+  const projectJson = useMemo(() => {
+    try {
+      return JSON.stringify(
+        serialiseProject({
+          graph: snapshot,
+          samples: slots,
+          settings: { tempo },
+          project: { name: "Ping Project" },
+        }),
+        null,
+        2,
+      );
+    } catch (error) {
+      return JSON.stringify({ error: error.message }, null, 2);
+    }
+  }, [snapshot, slots, tempo]);
+  const deferredProjectJson = useDeferredValue(projectJson);
+  const sidebarExtensions = useMemo(
+    () => ({
+      tabs: [
+        {
+          id: "save",
+          label: "project",
+          markup: buildProjectJsonPanelMarkup(deferredProjectJson),
+          testId: "tab-save",
+        },
+      ],
+      actions: [],
+    }),
+    [deferredProjectJson],
+  );
 
   async function handleSidebarAction(actionId) {
     if (actionId === "download-project-json") {
