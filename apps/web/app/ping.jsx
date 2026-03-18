@@ -386,6 +386,26 @@ export function Ping() {
     return performance.now() / 1000;
   }
 
+  function getAudibleLatencySec(preferredAudioContext = null) {
+    const audioContext = preferredAudioContext ?? audioContextRef.current;
+
+    if (!audioContext) {
+      return 0;
+    }
+
+    const baseLatency = Number.isFinite(audioContext.baseLatency) ? audioContext.baseLatency : 0;
+    const outputLatency = Number.isFinite(audioContext.outputLatency)
+      ? audioContext.outputLatency
+      : 0;
+
+    return Math.max(0, baseLatency + outputLatency);
+  }
+
+  function getAudibleClockTimeSec(preferredAudioContext = null) {
+    const audioContext = preferredAudioContext ?? audioContextRef.current;
+    return Math.max(0, getClockTimeSec(audioContext) - getAudibleLatencySec(audioContext));
+  }
+
   async function syncDoughSampleSlots(nextSlots = slotsRef.current) {
     const sampleMap = createDoughSampleMap(nextSlots);
     await doughsamples(sampleMap, "");
@@ -644,6 +664,11 @@ export function Ping() {
         state: audioContext?.state,
         currentTime: audioContext?.currentTime,
       });
+      traceAudio("armAudioEngine:latency", {
+        baseLatency: audioContext?.baseLatency,
+        outputLatency: audioContext?.outputLatency,
+        audibleLatencySec: getAudibleLatencySec(audioContext),
+      });
 
       if (doughRef.current !== dough) {
         traceAudio("armAudioEngine:abort-dough-changed-before-preload");
@@ -894,7 +919,7 @@ export function Ping() {
 
     function tickPreview() {
       const transport = transportRef.current;
-      const nowTimeSec = getClockTimeSec();
+      const nowTimeSec = getAudibleClockTimeSec();
       const nowTick =
         transport.bpm > 0
           ? transport.originTick + (nowTimeSec - transport.originTimeSec) * (transport.bpm / 60)
@@ -1019,6 +1044,9 @@ export function Ping() {
       },
       get audioContextTime() {
         return audioContextRef.current?.currentTime ?? null;
+      },
+      get audibleLatencySec() {
+        return getAudibleLatencySec();
       },
       get transport() {
         return transportRef.current;
