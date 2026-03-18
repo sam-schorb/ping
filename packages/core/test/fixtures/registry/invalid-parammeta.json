@@ -1,0 +1,21 @@
+[
+  {
+    "type": "fixture-parammeta",
+    "label": "Fixture Param Meta",
+    "description": "Uses malformed paramMap metadata.",
+    "category": "Modifiers",
+    "icon": "lpf",
+    "color": "#f9844a",
+    "layout": "single-io",
+    "inputs": 1,
+    "outputs": 1,
+    "controlPorts": 0,
+    "hasParam": true,
+    "defaultParam": 1,
+    "paramMap": {
+      "param": {
+        "target": "lpf"
+      }
+    }
+  }
+]

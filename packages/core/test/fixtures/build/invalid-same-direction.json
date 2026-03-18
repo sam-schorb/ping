@@ -1,0 +1,26 @@
+{
+  "nodes": [
+    {
+      "id": "output-a",
+      "type": "output",
+      "pos": { "x": 0, "y": 0 },
+      "rot": 0,
+      "params": {}
+    },
+    {
+      "id": "output-b",
+      "type": "output",
+      "pos": { "x": 4, "y": 0 },
+      "rot": 0,
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-a",
+      "from": { "nodeId": "output-a", "portSlot": 0 },
+      "to": { "nodeId": "output-b", "portSlot": 0 },
+      "manualCorners": []
+    }
+  ]
+}

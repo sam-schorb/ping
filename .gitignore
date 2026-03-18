@@ -1,6 +1,7 @@
-AGENTS.md
-MONOREPO_SETUP.md
-SUBMODULE.md
 .DS_Store
 node_modules/
-moduleSpecs/
+.playwright-browsers/
+apps/web/public/dough/
+apps/web/public/samples/
+apps/web/playwright-report/
+apps/web/test-results/

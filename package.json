@@ -9,7 +9,8 @@
     "dev": "npm run dev -w apps/web",
     "build": "npm run build -w apps/web",
     "start": "npm run start -w apps/web",
-    "test": "npm -ws test",
-    "lint": "npm -ws lint"
+    "test:dough": "npm --prefix dough test",
+    "test": "npm run -ws --if-present test",
+    "lint": "npm run -ws --if-present lint"
   }
 }

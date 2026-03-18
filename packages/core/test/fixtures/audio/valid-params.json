@@ -1,0 +1,39 @@
+{
+  "transport": {
+    "bpm": 60,
+    "ticksPerBeat": 1,
+    "originSec": 0
+  },
+  "config": {
+    "lookaheadSec": 0,
+    "horizonSec": 4
+  },
+  "clock": {
+    "t0": 0,
+    "t1": 0,
+    "latency": 0.05
+  },
+  "events": [
+    {
+      "tick": 2,
+      "value": 8,
+      "params": {
+        "pitch": 4,
+        "decay": 4,
+        "crush": 5,
+        "hpf": 2,
+        "lpf": 7
+      }
+    }
+  ],
+  "slots": [
+    { "id": "1", "path": "/kits/default/kick.wav" },
+    { "id": "2", "path": "/kits/default/snare.wav" },
+    { "id": "3", "path": "/kits/default/clap.wav" },
+    { "id": "4", "path": "/kits/default/hat-closed.wav" },
+    { "id": "5", "path": "/kits/default/hat-open.wav" },
+    { "id": "6", "path": "/kits/default/tom-low.wav" },
+    { "id": "7", "path": "/kits/default/tom-mid.wav" },
+    { "id": "8", "path": "/kits/default/tom-high.wav" }
+  ]
+}

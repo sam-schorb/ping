@@ -1,0 +1,15 @@
+[
+  {
+    "type": "fixture-missing-label",
+    "description": "Missing the required label field.",
+    "category": "Math",
+    "icon": "add",
+    "color": "#4d908e",
+    "layout": "single-io",
+    "inputs": 1,
+    "outputs": 1,
+    "controlPorts": 0,
+    "hasParam": true,
+    "defaultParam": 1
+  }
+]

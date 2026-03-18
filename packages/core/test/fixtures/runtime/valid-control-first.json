@@ -1,0 +1,63 @@
+{
+  "nodes": [
+    {
+      "id": "node-reset",
+      "type": "pulse",
+      "param": 1,
+      "state": {},
+      "inputs": 1,
+      "outputs": 1,
+      "controlPorts": 1
+    },
+    {
+      "id": "node-source",
+      "type": "pulse",
+      "param": 1,
+      "state": {},
+      "inputs": 1,
+      "outputs": 1,
+      "controlPorts": 1
+    },
+    {
+      "id": "node-counter",
+      "type": "counter",
+      "param": 5,
+      "state": { "count": 0 },
+      "inputs": 1,
+      "outputs": 1,
+      "controlPorts": 1
+    },
+    {
+      "id": "node-output",
+      "type": "output",
+      "param": 1,
+      "state": {},
+      "inputs": 1,
+      "outputs": 0,
+      "controlPorts": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-control",
+      "from": { "nodeId": "node-reset", "portSlot": 0 },
+      "to": { "nodeId": "node-counter", "portSlot": 1 },
+      "role": "control",
+      "delay": 0.5
+    },
+    {
+      "id": "edge-signal",
+      "from": { "nodeId": "node-source", "portSlot": 0 },
+      "to": { "nodeId": "node-counter", "portSlot": 0 },
+      "role": "signal",
+      "delay": 0.5
+    },
+    {
+      "id": "edge-out",
+      "from": { "nodeId": "node-counter", "portSlot": 0 },
+      "to": { "nodeId": "node-output", "portSlot": 0 },
+      "role": "signal",
+      "delay": 0.25
+    }
+  ]
+}

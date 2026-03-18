@@ -1,0 +1,26 @@
+{
+  "nodes": [
+    {
+      "id": "node-output",
+      "type": "output",
+      "pos": { "x": 0, "y": 0 },
+      "rot": 0,
+      "params": {}
+    },
+    {
+      "id": "node-pulse",
+      "type": "pulse",
+      "pos": { "x": 2, "y": 0 },
+      "rot": 0,
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-bad-direction",
+      "from": { "nodeId": "node-output", "portSlot": 0 },
+      "to": { "nodeId": "node-pulse", "portSlot": 0 },
+      "manualCorners": []
+    }
+  ]
+}

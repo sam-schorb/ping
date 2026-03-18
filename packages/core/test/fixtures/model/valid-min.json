@@ -1,0 +1,10 @@
+{
+  "nodes": [
+    {
+      "id": "node-pulse",
+      "type": "pulse",
+      "pos": { "x": 2, "y": 3 }
+    }
+  ],
+  "edges": []
+}

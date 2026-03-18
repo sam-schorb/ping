@@ -3,5 +3,20 @@
   "private": true,
   "version": "0.0.0",
   "main": "src/index.js",
-  "type": "module"
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./react": "./react/index.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@ping/core": "*",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
 }

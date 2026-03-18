@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "graph": {
+    "nodes": [
+      {
+        "id": "node-pulse",
+        "type": "pulse",
+        "pos": { "x": 0, "y": 0 },
+        "rot": 0,
+        "params": {}
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-bad",
+        "from": { "nodeId": "node-pulse", "portSlot": 0 },
+        "to": { "nodeId": "missing-node", "portSlot": 0 },
+        "manualCorners": []
+      }
+    ]
+  }
+}

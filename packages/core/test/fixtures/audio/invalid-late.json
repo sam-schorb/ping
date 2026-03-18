@@ -1,0 +1,22 @@
+{
+  "transport": {
+    "bpm": 60,
+    "ticksPerBeat": 1,
+    "originSec": 0
+  },
+  "config": {
+    "lookaheadSec": 0,
+    "horizonSec": 3
+  },
+  "clock": {
+    "t0": 1,
+    "t1": 1.5,
+    "latency": 0.05
+  },
+  "events": [
+    {
+      "tick": 1,
+      "value": 2
+    }
+  ]
+}

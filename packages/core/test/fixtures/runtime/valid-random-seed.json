@@ -1,0 +1,47 @@
+{
+  "nodes": [
+    {
+      "id": "node-pulse",
+      "type": "pulse",
+      "param": 1,
+      "state": {},
+      "inputs": 1,
+      "outputs": 1,
+      "controlPorts": 1
+    },
+    {
+      "id": "node-random",
+      "type": "random",
+      "param": 8,
+      "state": {},
+      "inputs": 1,
+      "outputs": 1,
+      "controlPorts": 0
+    },
+    {
+      "id": "node-output",
+      "type": "output",
+      "param": 1,
+      "state": {},
+      "inputs": 1,
+      "outputs": 0,
+      "controlPorts": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-a",
+      "from": { "nodeId": "node-pulse", "portSlot": 0 },
+      "to": { "nodeId": "node-random", "portSlot": 0 },
+      "role": "signal",
+      "delay": 0.25
+    },
+    {
+      "id": "edge-b",
+      "from": { "nodeId": "node-random", "portSlot": 0 },
+      "to": { "nodeId": "node-output", "portSlot": 0 },
+      "role": "signal",
+      "delay": 0.25
+    }
+  ]
+}
