@@ -1,23 +1,29 @@
 import { readFile } from "node:fs/promises";
 
 const ALLOWED_ASSETS = Object.freeze({
-  "dough.js": "application/javascript; charset=utf-8",
-  "dough.wasm": "application/wasm",
+  "dough.js": {
+    contentType: "application/javascript; charset=utf-8",
+    file: new URL("../../../../../dough/dough.js", import.meta.url),
+  },
+  "dough.wasm": {
+    contentType: "application/wasm",
+    file: new URL("../../../../../dough/dough.wasm", import.meta.url),
+  },
 });
 
 export async function GET(_request, context) {
   const { asset } = await context.params;
-  const contentType = ALLOWED_ASSETS[asset];
+  const entry = ALLOWED_ASSETS[asset];
 
-  if (!contentType) {
+  if (!entry) {
     return new Response("Not found.", { status: 404 });
   }
 
-  const file = await readFile(new URL(`../../../../../dough/${asset}`, import.meta.url));
+  const file = await readFile(entry.file);
 
   return new Response(file, {
     headers: {
-      "Content-Type": contentType,
+      "Content-Type": entry.contentType,
       "Cache-Control": "public, max-age=31536000, immutable",
     },
   });
