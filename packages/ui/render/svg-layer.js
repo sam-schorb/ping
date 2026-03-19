@@ -3,6 +3,7 @@ import { routeEdge } from "@ping/core";
 import { resolveIcon } from "../icons/library.js";
 import {
   createEmptyRoute,
+  doesRouteIntersectBounds,
   getNodeScreenBox,
   getNodeWorldBounds,
   getPointAtRouteProgress,
@@ -370,77 +371,6 @@ function createPreviewSnapshot(snapshot, previewState) {
     ...snapshot,
     nodes: snapshot.nodes.map((node) => getRenderableNode(node, previewState)),
   };
-}
-
-function rangeIntersects(minA, maxA, minB, maxB) {
-  return Math.max(minA, minB) <= Math.min(maxA, maxB);
-}
-
-function getBoundsEdges(bounds) {
-  return {
-    minX: bounds.x,
-    maxX: bounds.x + bounds.width,
-    minY: bounds.y,
-    maxY: bounds.y + bounds.height,
-  };
-}
-
-function doesOrthogonalSegmentIntersectBounds(start, end, bounds) {
-  const edges = getBoundsEdges(bounds);
-
-  if (start.x === end.x) {
-    return (
-      start.x >= edges.minX &&
-      start.x <= edges.maxX &&
-      rangeIntersects(
-        Math.min(start.y, end.y),
-        Math.max(start.y, end.y),
-        edges.minY,
-        edges.maxY,
-      )
-    );
-  }
-
-  if (start.y === end.y) {
-    return (
-      start.y >= edges.minY &&
-      start.y <= edges.maxY &&
-      rangeIntersects(
-        Math.min(start.x, end.x),
-        Math.max(start.x, end.x),
-        edges.minX,
-        edges.maxX,
-      )
-    );
-  }
-
-  return false;
-}
-
-function doesRouteIntersectBounds(route, bounds) {
-  if (!route?.points?.length) {
-    return false;
-  }
-
-  if (route.points.length === 1) {
-    const point = route.points[0];
-    const edges = getBoundsEdges(bounds);
-
-    return (
-      point.x >= edges.minX &&
-      point.x <= edges.maxX &&
-      point.y >= edges.minY &&
-      point.y <= edges.maxY
-    );
-  }
-
-  for (let index = 1; index < route.points.length; index += 1) {
-    if (doesOrthogonalSegmentIntersectBounds(route.points[index - 1], route.points[index], bounds)) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 function collectPreviewNodeIds(previewState) {

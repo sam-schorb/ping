@@ -14,16 +14,8 @@ const registry = {
   getLayout,
 };
 
-test("buildGraph preserves raw float delays from routing output", async () => {
-  const fixture = await loadBuildFixture("valid-min.json");
-  const result = buildGraph(fixture, registry, new Map([["edge-a", 3.75]]));
-
-  assert.equal(result.ok, true);
-  assert.equal(result.graph.edges[0].delay, 3.75);
-});
-
-test("routeProjectGraph merges instantiated group-internal delays needed by buildGraph", () => {
-  const snapshot = {
+function createGroupedDelaySnapshot(preserveInternalCableDelays = false) {
+  return {
     nodes: [
       {
         id: "node-group",
@@ -53,6 +45,7 @@ test("routeProjectGraph merges instantiated group-internal delays needed by buil
       "group-a": {
         id: "group-a",
         name: "Group A",
+        preserveInternalCableDelays,
         graph: {
           nodes: [
             {
@@ -87,11 +80,43 @@ test("routeProjectGraph merges instantiated group-internal delays needed by buil
       },
     },
   };
+}
+
+test("buildGraph preserves raw float delays from routing output", async () => {
+  const fixture = await loadBuildFixture("valid-min.json");
+  const result = buildGraph(fixture, registry, new Map([["edge-a", 3.75]]));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.graph.edges[0].delay, 3.75);
+});
+
+test("routeProjectGraph merges instantiated group-internal delays needed by buildGraph", () => {
+  const snapshot = createGroupedDelaySnapshot(false);
 
   const routed = routeProjectGraph(snapshot, registry);
   const result = buildGraph(snapshot, registry, routed.edgeDelays);
 
   assert.equal(routed.edgeDelays.has("inner-edge"), true);
   assert.equal(routed.edgeDelays.has("edge-out"), true);
+  assert.equal(routed.edgeDelays.get("inner-edge"), 0);
   assert.equal(result.ok, true);
+  assert.equal(
+    result.graph.edges.find((edge) => edge.id === "node-group::edge::inner-edge")?.delay,
+    0,
+  );
+});
+
+test("routeProjectGraph preserves grouped internal delays when requested", () => {
+  const snapshot = createGroupedDelaySnapshot(true);
+
+  const routed = routeProjectGraph(snapshot, registry);
+  const result = buildGraph(snapshot, registry, routed.edgeDelays);
+
+  assert.equal(routed.edgeDelays.has("inner-edge"), true);
+  assert.ok(routed.edgeDelays.get("inner-edge") > 0);
+  assert.equal(result.ok, true);
+  assert.equal(
+    result.graph.edges.find((edge) => edge.id === "node-group::edge::inner-edge")?.delay,
+    routed.edgeDelays.get("inner-edge"),
+  );
 });

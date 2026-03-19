@@ -61,9 +61,10 @@ export function routeProjectGraph(snapshot, registry, config, changedEdges, cach
     }
 
     const groupResult = routeGraph(groupDefinition.graph, registry, config, null, groupCache);
+    const preserveInternalCableDelays = groupDefinition.preserveInternalCableDelays === true;
 
     for (const [edgeId, delay] of groupResult.edgeDelays.entries()) {
-      edgeDelays.set(edgeId, delay);
+      edgeDelays.set(edgeId, preserveInternalCableDelays ? delay : 0);
     }
 
     if (groupResult.errors?.length) {

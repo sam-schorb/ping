@@ -3,10 +3,15 @@ import assert from "node:assert/strict";
 
 import {
   buildRegistryIndex,
+  getNodeRoutingBounds,
   getLayout,
   getNodeDefinition,
+  getPortAnchor,
 } from "@ping/core";
 import {
+  buildObstacleAwarePreviewRoute,
+  buildPreviewRoute,
+  doesRouteIntersectBounds,
   getPointAtRouteProgress,
   getPortWorldPoint,
   snapWorldPoint,
@@ -43,6 +48,85 @@ test("thumb math walks orthogonal polylines", () => {
   assert.deepEqual(getPointAtRouteProgress(route, 0), { x: 0, y: 0 });
   assert.deepEqual(getPointAtRouteProgress(route, 0.5), { x: 4, y: 0 });
   assert.deepEqual(getPointAtRouteProgress(route, 0.75), { x: 4, y: 2 });
+});
+
+test("preview routes stay orthogonal through manual corners and include a start stub", () => {
+  const route = buildPreviewRoute(
+    { x: 3, y: 1 },
+    { x: 12, y: 1 },
+    "horizontal-first",
+    [{ x: 6, y: 2 }],
+    {
+      startOutward: { x: 1, y: 0 },
+      stubLength: 1,
+    },
+  );
+
+  assert.deepEqual(route.points, [
+    { x: 3, y: 1 },
+    { x: 4, y: 1 },
+    { x: 6, y: 1 },
+    { x: 6, y: 2 },
+    { x: 12, y: 2 },
+    { x: 12, y: 1 },
+  ]);
+});
+
+test("obstacle-aware preview routes detour around blocking nodes without touching their edges", () => {
+  const snapshot = {
+    nodes: [
+      { id: "node-pulse", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: {} },
+      { id: "node-blocker", type: "set", pos: { x: 5, y: -1 }, rot: 0, params: { param: 3 } },
+    ],
+    edges: [],
+    groups: {},
+  };
+  const fromAnchor = getPortAnchor(snapshot.nodes[0], "out", 0, snapshot, REGISTRY, "preview");
+  const blockerBounds = getNodeRoutingBounds(snapshot.nodes[1], snapshot, REGISTRY, "preview");
+  const route = buildObstacleAwarePreviewRoute({
+    snapshot,
+    registry: REGISTRY,
+    fromAnchor,
+    toPoint: { x: 12, y: 1 },
+    bendPreference: "horizontal-first",
+    stubLength: 1,
+  });
+
+  assert.deepEqual(route.points, [
+    { x: 3, y: 1 },
+    { x: 4, y: 1 },
+    { x: 4, y: 3 },
+    { x: 12, y: 3 },
+    { x: 12, y: 1 },
+  ]);
+  assert.equal(doesRouteIntersectBounds(route, blockerBounds), false);
+});
+
+test("obstacle-aware preview clamps a cursor inside a node back to a legal endpoint", () => {
+  const snapshot = {
+    nodes: [
+      { id: "node-pulse", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: {} },
+      { id: "node-blocker", type: "set", pos: { x: 5, y: -1 }, rot: 0, params: { param: 3 } },
+    ],
+    edges: [],
+    groups: {},
+  };
+  const fromAnchor = getPortAnchor(snapshot.nodes[0], "out", 0, snapshot, REGISTRY, "preview");
+  const blockerBounds = getNodeRoutingBounds(snapshot.nodes[1], snapshot, REGISTRY, "preview");
+  const route = buildObstacleAwarePreviewRoute({
+    snapshot,
+    registry: REGISTRY,
+    fromAnchor,
+    toPoint: { x: 6, y: 1 },
+    bendPreference: "horizontal-first",
+    stubLength: 1,
+  });
+
+  assert.deepEqual(route.points, [
+    { x: 3, y: 1 },
+    { x: 4, y: 1 },
+  ]);
+  assert.equal(doesRouteIntersectBounds(route, blockerBounds), false);
 });
 
 test("multi-io port geometry preserves mux ordering and mirrored demux ordering", () => {

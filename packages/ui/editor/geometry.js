@@ -1,4 +1,4 @@
-import { getPortSideSlot } from "@ping/core";
+import { buildOrthogonalRoute, getNodeRoutingBounds, getPortSideSlot } from "@ping/core";
 
 const ROTATIONS = [0, 90, 180, 270];
 
@@ -308,24 +308,263 @@ export function resolveRenderableEdgeRoute(edge, snapshot, routes, registry) {
   return createFallbackRoute(edge, snapshot, registry);
 }
 
-export function buildPreviewRoute(fromPoint, toPoint, bendPreference = "horizontal-first", tempCorners = []) {
+function samePoint(left, right) {
+  return left.x === right.x && left.y === right.y;
+}
+
+function snapPreviewPoint(point) {
+  return {
+    x: Math.round(point.x),
+    y: Math.round(point.y),
+  };
+}
+
+function rangeIntersects(minA, maxA, minB, maxB) {
+  return Math.max(minA, minB) <= Math.min(maxA, maxB);
+}
+
+function getBoundsEdges(bounds) {
+  if (
+    Number.isFinite(bounds?.x) &&
+    Number.isFinite(bounds?.y) &&
+    Number.isFinite(bounds?.width) &&
+    Number.isFinite(bounds?.height)
+  ) {
+    return {
+      minX: bounds.x,
+      maxX: bounds.x + bounds.width,
+      minY: bounds.y,
+      maxY: bounds.y + bounds.height,
+    };
+  }
+
+  return {
+    minX: Math.min(bounds.x0, bounds.x1),
+    maxX: Math.max(bounds.x0, bounds.x1),
+    minY: Math.min(bounds.y0, bounds.y1),
+    maxY: Math.max(bounds.y0, bounds.y1),
+  };
+}
+
+function doesOrthogonalSegmentIntersectBounds(start, end, bounds) {
+  const edges = getBoundsEdges(bounds);
+
+  if (start.x === end.x) {
+    return (
+      start.x >= edges.minX &&
+      start.x <= edges.maxX &&
+      rangeIntersects(
+        Math.min(start.y, end.y),
+        Math.max(start.y, end.y),
+        edges.minY,
+        edges.maxY,
+      )
+    );
+  }
+
+  if (start.y === end.y) {
+    return (
+      start.y >= edges.minY &&
+      start.y <= edges.maxY &&
+      rangeIntersects(
+        Math.min(start.x, end.x),
+        Math.max(start.x, end.x),
+        edges.minX,
+        edges.maxX,
+      )
+    );
+  }
+
+  return false;
+}
+
+export function doesRouteIntersectBounds(route, bounds) {
+  if (!route?.points?.length) {
+    return false;
+  }
+
+  if (route.points.length === 1) {
+    const point = route.points[0];
+    const edges = getBoundsEdges(bounds);
+
+    return (
+      point.x >= edges.minX &&
+      point.x <= edges.maxX &&
+      point.y >= edges.minY &&
+      point.y <= edges.maxY
+    );
+  }
+
+  for (let index = 1; index < route.points.length; index += 1) {
+    if (doesOrthogonalSegmentIntersectBounds(route.points[index - 1], route.points[index], bounds)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function projectPointOutsideBounds(point, bounds) {
+  if (!doesRouteIntersectBounds({ points: [point] }, bounds)) {
+    return point;
+  }
+
+  const edges = getBoundsEdges(bounds);
+  const candidates = [
+    {
+      x: edges.minX - 1,
+      y: Math.min(edges.maxY + 1, Math.max(edges.minY - 1, point.y)),
+    },
+    {
+      x: edges.maxX + 1,
+      y: Math.min(edges.maxY + 1, Math.max(edges.minY - 1, point.y)),
+    },
+    {
+      x: Math.min(edges.maxX + 1, Math.max(edges.minX - 1, point.x)),
+      y: edges.minY - 1,
+    },
+    {
+      x: Math.min(edges.maxX + 1, Math.max(edges.minX - 1, point.x)),
+      y: edges.maxY + 1,
+    },
+  ];
+
+  return candidates.reduce((best, candidate) => {
+    const bestDistance = Math.abs(best.x - point.x) + Math.abs(best.y - point.y);
+    const candidateDistance = Math.abs(candidate.x - point.x) + Math.abs(candidate.y - point.y);
+
+    return candidateDistance < bestDistance ? candidate : best;
+  });
+}
+
+function projectPointOutsideObstacles(point, obstacles) {
+  let projected = snapPreviewPoint(point);
+  let changed = true;
+  let iterations = 0;
+  const maxIterations = Math.max(1, obstacles.length * 4);
+
+  while (changed && iterations < maxIterations) {
+    changed = false;
+    iterations += 1;
+
+    for (const bounds of obstacles) {
+      const nextPoint = projectPointOutsideBounds(projected, bounds);
+
+      if (!samePoint(nextPoint, projected)) {
+        projected = nextPoint;
+        changed = true;
+      }
+    }
+  }
+
+  return projected;
+}
+
+function appendOrthogonalPreviewSegment(points, toPoint, bendPreference) {
+  const current = points.at(-1);
+
+  if (!current || samePoint(current, toPoint)) {
+    return;
+  }
+
+  if (current.x === toPoint.x || current.y === toPoint.y) {
+    points.push(toPoint);
+    return;
+  }
+
+  const elbow =
+    bendPreference === "vertical-first"
+      ? { x: current.x, y: toPoint.y }
+      : { x: toPoint.x, y: current.y };
+
+  if (!samePoint(current, elbow)) {
+    points.push(elbow);
+  }
+
+  if (!samePoint(points.at(-1), toPoint)) {
+    points.push(toPoint);
+  }
+}
+
+export function buildPreviewRoute(
+  fromPoint,
+  toPoint,
+  bendPreference = "horizontal-first",
+  tempCorners = [],
+  options = {},
+) {
   const points = [fromPoint];
+  const startOutward = options?.startOutward;
+  const stubLength = Number.isFinite(options?.stubLength)
+    ? Math.max(0, Number(options.stubLength))
+    : 0;
+
+  if (startOutward && stubLength > 0) {
+    const startStub = {
+      x: fromPoint.x + startOutward.x * stubLength,
+      y: fromPoint.y + startOutward.y * stubLength,
+    };
+
+    if (!samePoint(points[0], startStub)) {
+      points.push(startStub);
+    }
+  }
 
   for (const corner of tempCorners) {
-    points.push(corner);
+    appendOrthogonalPreviewSegment(points, corner, bendPreference);
   }
 
-  const lastPoint = points.at(-1);
+  appendOrthogonalPreviewSegment(points, toPoint, bendPreference);
 
-  if (bendPreference === "vertical-first") {
-    if (lastPoint.x !== toPoint.x) {
-      points.push({ x: lastPoint.x, y: toPoint.y });
-    }
-  } else if (lastPoint.y !== toPoint.y) {
-    points.push({ x: toPoint.x, y: lastPoint.y });
+  return {
+    points,
+    svgPathD: createSvgPath(points),
+    totalLength: getRouteLength(points),
+  };
+}
+
+export function buildObstacleAwarePreviewRoute({
+  snapshot,
+  registry,
+  fromAnchor,
+  toPoint,
+  bendPreference = "horizontal-first",
+  tempCorners = [],
+  stubLength = 1,
+}) {
+  if (!fromAnchor?.point || !fromAnchor?.outward) {
+    return createEmptyRoute();
   }
 
-  points.push(toPoint);
+  const obstacles = snapshot.nodes.map((node) =>
+    getNodeRoutingBounds(node, snapshot, registry, "preview"),
+  );
+  const ghostPoint = projectPointOutsideObstacles(toPoint, obstacles);
+  const startStub =
+    stubLength > 0
+      ? {
+          x: fromAnchor.point.x + fromAnchor.outward.x * stubLength,
+          y: fromAnchor.point.y + fromAnchor.outward.y * stubLength,
+        }
+      : null;
+  const manualCorners = [
+    ...(startStub ? [startStub] : []),
+    ...tempCorners.map((point) => snapPreviewPoint(point)),
+  ];
+  const points = buildOrthogonalRoute({
+    startAnchor: fromAnchor.point,
+    startOutward: fromAnchor.outward,
+    endAnchor: ghostPoint,
+    endOutward: { x: 0, y: 0 },
+    manualCorners,
+    stubLength,
+    bendPreference,
+    obstacles,
+  });
+
+  if (!points) {
+    return createEmptyRoute();
+  }
 
   return {
     points,

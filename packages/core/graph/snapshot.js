@@ -453,10 +453,26 @@ export function normalizeGroupDefinition(group, getNodeDefinition, options = {})
     return controls;
   }
 
+  const preserveInternalCableDelays =
+    group.preserveInternalCableDelays === undefined
+      ? false
+      : group.preserveInternalCableDelays;
+
+  if (typeof preserveInternalCableDelays !== "boolean") {
+    return {
+      issue: createModelIssue(
+        MODEL_ERROR_CODES.INVALID_OPERATION,
+        `Group "${group.id}" preserveInternalCableDelays must be a boolean.`,
+        group.id,
+      ),
+    };
+  }
+
   return {
     group: {
       id: group.id,
       name: group.name,
+      preserveInternalCableDelays,
       graph: normalizedGraph.snapshot,
       inputs: inputs.mappings,
       outputs: outputs.mappings,

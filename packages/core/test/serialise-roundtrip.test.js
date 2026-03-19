@@ -47,6 +47,16 @@ test("serialiseProject preserves graph ordering while filling canonical defaults
   assert.deepEqual(canonical.settings, { tempo: DEFAULT_TEMPO_BPM });
 });
 
+test("group serialisation fills and preserves preserveInternalCableDelays", async () => {
+  const fixture = await loadSerialisationFixtureJSON("valid-groups.json");
+  const parsed = parseProject(fixture);
+  const canonical = serialiseProject(parsed.project);
+
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.project.graph.groups["group-a"].preserveInternalCableDelays, false);
+  assert.equal(canonical.graph.groups["group-a"].preserveInternalCableDelays, false);
+});
+
 test("default sample slots follow the bundled public kit order", () => {
   assert.deepEqual(
     createDefaultSampleSlots().map((slot) => slot.path),

@@ -408,9 +408,11 @@ test("group bundle order and rewiring follow the spec", () => {
     groupName: "Group A",
     groupNodeId: "node-group",
     groupPosition: { x: 4, y: 2 },
+    preserveInternalCableDelays: true,
   });
 
   assert.equal(result.ok, true);
+  assert.equal(result.group.preserveInternalCableDelays, true);
   assert.deepEqual(
     result.ops.map((op) => op.type),
     ["addGroup", "addNode", "removeEdge", "removeEdge", "removeNode", "removeNode", "addEdge"],
@@ -462,6 +464,7 @@ test("group updates shift connected control edges when signal inputs move", () =
     snapshot,
     groupId: "group-a",
     groupName: "Group A",
+    preserveInternalCableDelays: false,
     mappings: {
       inputs: [{ label: "Signal A", nodeId: "inner-add", portSlot: 0 }],
       outputs: [{ label: "Output", nodeId: "inner-add", portSlot: 0 }],
@@ -470,6 +473,7 @@ test("group updates shift connected control edges when signal inputs move", () =
   });
 
   assert.equal(result.ok, true);
+  assert.equal(result.group.preserveInternalCableDelays, false);
   assert.deepEqual(result.ops.map((op) => op.type), ["removeEdge", "updateGroup", "addEdge"]);
   assert.equal(result.ops[0].payload.id, "edge-control");
   assert.equal(result.ops[2].payload.edge.id, "edge-control");

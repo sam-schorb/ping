@@ -2,6 +2,9 @@ import {
   createDefaultSampleSlots,
   createEmptyGraphSnapshot,
   DEFAULT_TEMPO_BPM,
+  getPortAnchor,
+  resolveRoutingConfig,
+  routeEdge,
 } from "@ping/core";
 
 import { mergeUIConfig } from "../config/defaults.js";
@@ -32,11 +35,11 @@ import {
   toggleGroupSelection,
 } from "./state.js";
 import {
-  buildPreviewRoute,
+  buildObstacleAwarePreviewRoute,
   clampCamera,
   clampParamInput,
+  createEmptyRoute,
   getNodeWorldBounds,
-  getPortWorldPoint,
   snapWorldPoint,
 } from "./geometry.js";
 import {
@@ -76,6 +79,26 @@ function normalizeTempo(value) {
 const CLIPBOARD_MIME = "application/x-ping-subgraph+json";
 const CLIPBOARD_TEXT_MARKER = "Ping subgraph";
 const NODE_PULSE_DURATION_MS = 200;
+const EDGE_CREATE_PREVIEW_EDGE_ID = "__edge-create-preview__";
+const GROUP_DIALOG_FOCUS_ATTRIBUTE_NAMES = [
+  "data-action",
+  "data-group-kind",
+  "data-group-id",
+  "data-group-index",
+  "data-group-direction",
+  "data-testid",
+  "name",
+  "type",
+];
+const MENU_FOCUS_ATTRIBUTE_NAMES = [
+  "data-action",
+  "data-menu-category",
+  "data-palette-type",
+  "data-group-ref",
+  "data-testid",
+  "name",
+  "type",
+];
 
 function getNodePulseWindowTicks(tempo) {
   return (normalizeTempo(tempo) / 60) * (NODE_PULSE_DURATION_MS / 1000);
@@ -729,6 +752,22 @@ function renderGroupConfigPanel(groupDraft, { sidebarCollapsed = false } = {}) {
           data-testid="group-name"
         />
       </label>
+      <label class="ping-editor__group-checkbox" data-testid="group-preserve-delays-field">
+        <input
+          class="ping-editor__group-checkbox-input"
+          type="checkbox"
+          name="group-preserve-delays"
+          data-action="group-preserve-delays"
+          data-testid="group-preserve-delays"
+          ${groupDraft.preserveInternalCableDelays ? "checked" : ""}
+        />
+        <span class="ping-editor__group-checkbox-copy">
+          <span class="ping-editor__group-checkbox-label">Preserve Internal Cable Delays</span>
+          <span class="ping-editor__group-checkbox-note">
+            When off, internal cables keep their saved shape but use the minimum possible delay.
+          </span>
+        </span>
+      </label>
       <section class="ping-editor__group-section">
         <h3>Connection View</h3>
         ${buildGroupConnectionView(groupDraft.candidates)}
@@ -759,7 +798,7 @@ function renderGroupConfigPanel(groupDraft, { sidebarCollapsed = false } = {}) {
           Cancel
         </button>
         <button class="ping-editor__panel-button is-primary" type="button" data-action="commit-group" data-testid="group-confirm">
-          ${isEdit ? "Save Changes" : "Save Group"}
+          ${isEdit ? "Save Changes" : "Save"}
         </button>
       </div>
     </div>
@@ -1114,19 +1153,15 @@ function createStyles(config) {
         line-height: 1;
       }
       .ping-editor__panel-button.is-primary {
-        color: #fff;
+        background: var(--ping-chrome-accent);
+        border-color: var(--ping-chrome-accent);
+        color: var(--ping-chrome-on-accent);
+        box-shadow: 0 10px 18px rgba(95, 49, 41, 0.16);
       }
       .ping-editor__tab.is-active {
         background: var(--ping-chrome-plate);
         color: var(--ping-chrome-ink-strong);
         box-shadow: inset 0 -2px 0 var(--ping-chrome-accent);
-      }
-      .ping-editor__toolbar .ping-editor__panel-button.is-primary,
-      .ping-editor__sidebar .ping-editor__panel-button.is-primary {
-        background: var(--ping-chrome-accent);
-        border-color: var(--ping-chrome-accent);
-        color: var(--ping-chrome-on-accent);
-        box-shadow: 0 10px 18px rgba(95, 49, 41, 0.16);
       }
       .ping-editor__toolbar .ping-editor__panel-button.is-danger,
       .ping-editor__sidebar .ping-editor__panel-button.is-danger {
@@ -1392,6 +1427,28 @@ function createStyles(config) {
         box-shadow: 0 24px 50px var(--ping-chrome-shadow);
         overflow: hidden;
       }
+      .ping-editor__menu-header {
+        display: grid;
+        gap: 6px;
+      }
+      .ping-editor__menu-search-input {
+        width: 100%;
+        min-height: 34px;
+        border: 1px solid var(--ping-chrome-border);
+        border-radius: 12px;
+        padding: 7px 10px;
+        font: inherit;
+        background: rgba(255, 250, 247, 0.96);
+        color: var(--ping-chrome-ink-strong);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+      }
+      .ping-editor__menu-search-input::placeholder {
+        color: var(--ping-chrome-ink-muted);
+      }
+      .ping-editor__menu-search-input:focus {
+        outline: 2px solid var(--ping-chrome-focus);
+        border-color: var(--ping-chrome-accent);
+      }
       .ping-editor__menu-categories {
         display: grid;
         gap: 6px;
@@ -1477,9 +1534,21 @@ function createStyles(config) {
       .ping-editor__menu-item-icon {
         display: block;
       }
+      .ping-editor__menu-item-body {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
       .ping-editor__menu-item-label {
         font-weight: 700;
         line-height: 1.2;
+      }
+      .ping-editor__menu-item-meta {
+        color: var(--ping-chrome-ink-muted);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
       }
       .ping-editor__menu-empty {
         color: var(--ping-chrome-ink-muted);
@@ -1526,9 +1595,40 @@ function createStyles(config) {
         margin: 4px 0 0;
         color: #6d675e;
       }
+      .ping-editor__group-checkbox {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        margin-top: 16px;
+        padding: 12px;
+        border: 1px solid var(--ping-chrome-border);
+        border-radius: 16px;
+        background: var(--ping-chrome-card);
+        cursor: pointer;
+      }
+      .ping-editor__group-checkbox-input {
+        margin: 2px 0 0;
+      }
+      .ping-editor__group-checkbox-copy {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+      .ping-editor__group-checkbox-label {
+        font-weight: 600;
+        color: var(--ping-chrome-ink-strong);
+      }
+      .ping-editor__group-checkbox-note {
+        color: #6d675e;
+        line-height: 1.35;
+      }
       .ping-editor__group-section {
         display: grid;
         gap: 10px;
+        margin-top: 16px;
+      }
+      .ping-editor__group-dialog .ping-editor__action-row {
         margin-top: 16px;
       }
       .ping-editor__mapping-arrow {
@@ -1709,6 +1809,7 @@ function buildMenuMarkup(state) {
         palette: state.palette,
         groups: state.snapshot.groups ?? {},
         activeCategory: state.menu.category,
+        query: state.menu.query,
         icons: state.config.icons,
       })}
     </div>
@@ -1751,6 +1852,7 @@ function createGroupDraft(state) {
       outputs: candidates.outputs[0]?.id ?? "",
       controls: candidates.controls[0]?.id ?? "",
     },
+    preserveInternalCableDelays: false,
   };
 }
 
@@ -1800,6 +1902,7 @@ function createGroupEditDraft(state, group) {
       outputs: available.outputs[0]?.id ?? "",
       controls: available.controls[0]?.id ?? "",
     },
+    preserveInternalCableDelays: group.preserveInternalCableDelays === true,
   };
 }
 
@@ -1857,30 +1960,21 @@ function focusElementWithoutScroll(element) {
   }
 }
 
-function readGroupDialogFocusState(root) {
+function readScopedFocusState(root, scopeSelector, attributeNames) {
   const activeElement = root?.ownerDocument?.activeElement;
 
   if (
     !activeElement ||
     typeof activeElement.matches !== "function" ||
     !root?.contains?.(activeElement) ||
-    !activeElement.closest(".ping-editor__group-dialog")
+    !activeElement.closest(scopeSelector)
   ) {
     return null;
   }
 
   return {
     tagName: activeElement.tagName.toLowerCase(),
-    attributes: [
-      "data-action",
-      "data-group-kind",
-      "data-group-id",
-      "data-group-index",
-      "data-group-direction",
-      "data-testid",
-      "name",
-      "type",
-    ]
+    attributes: attributeNames
       .map((name) => [name, activeElement.getAttribute(name)])
       .filter(([, value]) => value !== null),
     selectionStart:
@@ -1890,18 +1984,18 @@ function readGroupDialogFocusState(root) {
   };
 }
 
-function restoreGroupDialogFocus(root, focusState) {
+function restoreScopedFocus(root, scopeSelector, focusState) {
   if (!focusState) {
     return false;
   }
 
-  const dialog = root?.querySelector?.(".ping-editor__group-dialog");
+  const scope = root?.querySelector?.(scopeSelector);
 
-  if (!dialog) {
+  if (!scope) {
     return false;
   }
 
-  const nextElement = Array.from(dialog.querySelectorAll(focusState.tagName)).find((element) =>
+  const nextElement = Array.from(scope.querySelectorAll(focusState.tagName)).find((element) =>
     focusState.attributes.every(([name, value]) => element.getAttribute(name) === value),
   );
 
@@ -1922,6 +2016,22 @@ function restoreGroupDialogFocus(root, focusState) {
   }
 
   return true;
+}
+
+function readGroupDialogFocusState(root) {
+  return readScopedFocusState(root, ".ping-editor__group-dialog", GROUP_DIALOG_FOCUS_ATTRIBUTE_NAMES);
+}
+
+function restoreGroupDialogFocus(root, focusState) {
+  return restoreScopedFocus(root, ".ping-editor__group-dialog", focusState);
+}
+
+function readMenuFocusState(root) {
+  return readScopedFocusState(root, ".ping-editor__menu", MENU_FOCUS_ATTRIBUTE_NAMES);
+}
+
+function restoreMenuFocus(root, focusState) {
+  return restoreScopedFocus(root, ".ping-editor__menu", focusState);
 }
 
 function moveArrayEntry(list, index, nextIndex) {
@@ -1975,6 +2085,8 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       screen: { x: 48, y: 48 },
       world: { x: 2, y: 2 },
       category: DEFAULT_PALETTE_MENU_CATEGORY_ID,
+      query: "",
+      focusSearch: false,
     },
     sidebarExtensions: normalizeSidebarExtensions(sidebarExtensions),
     sidebarCollapsed: false,
@@ -2214,6 +2326,8 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       screen: { ...screen },
       world: { ...world },
       category: DEFAULT_PALETTE_MENU_CATEGORY_ID,
+      query: "",
+      focusSearch: true,
     };
     state.menuCategoriesScrollLeft = 0;
     state.creationOffset = 0;
@@ -2565,6 +2679,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
         groupId: state.groupDraft.groupId,
         groupName: state.groupDraft.name.trim() || state.groupDraft.groupId,
         mappings: state.groupDraft.mappings,
+        preserveInternalCableDelays: state.groupDraft.preserveInternalCableDelays,
       });
 
       if (!result.ok) {
@@ -2591,6 +2706,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       groupNodeId,
       groupPosition: getNextCreatePosition(),
       mappings: state.groupDraft.mappings,
+      preserveInternalCableDelays: state.groupDraft.preserveInternalCableDelays,
     });
 
     if (!result.ok) {
@@ -2667,6 +2783,20 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     clearTransientStates();
     closeMenu();
     return true;
+  }
+
+  function getEdgeCreatePreviewPortHit(portHit) {
+    if (state.drag.kind !== "edge-create") {
+      return null;
+    }
+
+    if (!portHit || portHit.direction === state.drag.from.direction) {
+      return null;
+    }
+
+    return canCreateEdge(state.snapshot, state.registry, state.drag.from, portHit)
+      ? portHit
+      : null;
   }
 
   function addEdgeCreateCorner(worldPoint) {
@@ -2948,6 +3078,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
         },
         cursor: worldPoint,
         tempCorners: [],
+        previewTargetPort: null,
       };
       state.edgeCreatePointerActive = true;
       emitSelection(createEmptySelection());
@@ -3102,9 +3233,18 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     }
 
     if (state.drag.kind === "edge-create") {
+      const portHit = getPortHitFromPointerEvent(event);
+      const previewTargetPort = getEdgeCreatePreviewPortHit(portHit);
+      const nextHover = portHit ?? createEmptyHover();
+
+      if (!hoverEquals(state.hover, nextHover)) {
+        state.hover = nextHover;
+      }
+
       state.drag = {
         ...state.drag,
         cursor: worldPoint,
+        previewTargetPort,
       };
       markViewportDirty();
       return;
@@ -3132,6 +3272,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
         state.drag = {
           ...state.drag,
           cursor: getWorldCursorFromPointer(event, state.viewport, state.camera, state.config),
+          previewTargetPort: null,
         };
       }
       markViewportDirty();
@@ -3654,7 +3795,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     if (action === "close-group-config") {
       state.groupDraft = null;
       state.groupDialogScrollTop = 0;
-      markViewportDirty();
+      markDirty();
       return true;
     }
 
@@ -3719,6 +3860,14 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       return;
     }
 
+    if (target.matches("[data-action='group-preserve-delays']") && state.groupDraft) {
+      state.groupDraft = {
+        ...state.groupDraft,
+        preserveInternalCableDelays: target.checked,
+      };
+      return;
+    }
+
     if (target.matches("[data-action='sample-file']")) {
       void handleFileInputChange(target);
     }
@@ -3729,6 +3878,20 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
 
     if (target.matches("[data-action='tempo']")) {
       updateTempo(Number(target.value || 0), { emit: true, control: target });
+      return;
+    }
+
+    if (target.matches("[data-action='search-menu']")) {
+      if (state.menu.query === target.value) {
+        return;
+      }
+
+      state.menu = {
+        ...state.menu,
+        query: target.value,
+        focusSearch: false,
+      };
+      markDirty();
       return;
     }
 
@@ -3745,25 +3908,64 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       return null;
     }
 
-    const node = state.snapshot.nodes.find((entry) => entry.id === state.drag.from.nodeId);
+    const previewTargetPort = getEdgeCreatePreviewPortHit(state.drag.previewTargetPort);
 
-    if (!node) {
-      return null;
+    if (previewTargetPort) {
+      const normalizedEndpoints = normalizeEdgeEndpoints(state.drag.from, previewTargetPort);
+
+      if (normalizedEndpoints) {
+        try {
+          return routeEdge(
+            EDGE_CREATE_PREVIEW_EDGE_ID,
+            {
+              ...state.snapshot,
+              edges: [
+                ...state.snapshot.edges,
+                {
+                  id: EDGE_CREATE_PREVIEW_EDGE_ID,
+                  from: {
+                    nodeId: normalizedEndpoints.from.nodeId,
+                    portSlot: normalizedEndpoints.from.portSlot,
+                  },
+                  to: {
+                    nodeId: normalizedEndpoints.to.nodeId,
+                    portSlot: normalizedEndpoints.to.portSlot,
+                  },
+                  manualCorners: state.drag.tempCorners.map((point) => ({ ...point })),
+                },
+              ],
+            },
+            state.registry,
+          );
+        } catch {
+          return createEmptyRoute();
+        }
+      }
     }
 
-    const fromPoint = getPortWorldPoint(
-      state.snapshot,
-      node,
-      state.registry,
-      state.drag.from.direction,
-      state.drag.from.portSlot,
-    );
+    try {
+      const fromAnchor = getPortAnchor(
+        state.snapshot.nodes.find((entry) => entry.id === state.drag.from.nodeId),
+        state.drag.from.direction,
+        state.drag.from.portSlot,
+        state.snapshot,
+        state.registry,
+        EDGE_CREATE_PREVIEW_EDGE_ID,
+      );
+      const previewRoutingConfig = resolveRoutingConfig();
 
-    if (!fromPoint) {
+      return buildObstacleAwarePreviewRoute({
+        snapshot: state.snapshot,
+        registry: state.registry,
+        fromAnchor,
+        toPoint: state.drag.cursor,
+        bendPreference: previewRoutingConfig.bendPreference,
+        tempCorners: state.drag.tempCorners,
+        stubLength: previewRoutingConfig.stubLength,
+      });
+    } catch {
       return null;
     }
-
-    return buildPreviewRoute(fromPoint, state.drag.cursor, "horizontal-first", state.drag.tempCorners);
   }
 
   function getViewportCursor() {
@@ -3833,6 +4035,7 @@ function buildViewportMarkup(selection) {
     state.menuCategoriesScrollLeft = readMenuCategoriesScrollLeft(state.root);
     state.groupDialogScrollTop = readGroupDialogScrollTop(state.root);
     const groupDialogFocusState = readGroupDialogFocusState(state.root);
+    const menuFocusState = readMenuFocusState(state.root);
     const shouldRestoreViewportFocus = state.root.ownerDocument?.activeElement === state.viewport;
 
     const selection = clearDeletedSelection(state.selection, state.snapshot);
@@ -3993,8 +4196,17 @@ function buildViewportMarkup(selection) {
     restoreSidebarTabsScrollLeft(state.root, state.sidebarTabsScrollLeft);
     restoreMenuCategoriesScrollLeft(state.root, state.menuCategoriesScrollLeft);
     restoreGroupDialogScrollTop(state.root, state.groupDialogScrollTop);
+    const restoredMenuFocus =
+      state.menu.open && state.menu.focusSearch ? false : restoreMenuFocus(state.root, menuFocusState);
     const restoredGroupDialogFocus = restoreGroupDialogFocus(state.root, groupDialogFocusState);
-    if (shouldRestoreViewportFocus && !restoredGroupDialogFocus) {
+    if (!restoredMenuFocus && state.menu.open && state.menu.focusSearch) {
+      focusElementWithoutScroll(state.root.querySelector('[data-testid="palette-menu-search"]'));
+      state.menu = {
+        ...state.menu,
+        focusSearch: false,
+      };
+    }
+    if (shouldRestoreViewportFocus && !restoredGroupDialogFocus && !state.menu.open) {
       focusViewport();
     }
     state.dirty = false;

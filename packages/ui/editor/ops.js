@@ -635,6 +635,7 @@ export function buildCreateGroupOps({
   groupNodeId,
   groupPosition,
   mappings,
+  preserveInternalCableDelays = false,
 }) {
   const candidates = buildGroupCandidates(snapshot, groupSelection, registry);
 
@@ -690,6 +691,7 @@ export function buildCreateGroupOps({
   const group = {
     id: groupId,
     name: groupName,
+    preserveInternalCableDelays,
     graph: {
       nodes: candidates.nodes.map((node) => cloneValue(node)),
       edges: candidates.edges.map((edge) => cloneValue(edge)),
@@ -795,6 +797,7 @@ export function buildUpdateGroupOps({
   groupId,
   groupName,
   mappings,
+  preserveInternalCableDelays,
 }) {
   const existingGroup = snapshot.groups?.[groupId];
 
@@ -809,6 +812,10 @@ export function buildUpdateGroupOps({
   const nextGroup = {
     id: existingGroup.id,
     name: groupName,
+    preserveInternalCableDelays:
+      preserveInternalCableDelays !== undefined
+        ? preserveInternalCableDelays
+        : existingGroup.preserveInternalCableDelays === true,
     graph: cloneValue(existingGroup.graph),
     inputs: (mappings?.inputs ?? existingGroup.inputs).map((entry) => ({
       ...(entry.label !== undefined ? { label: entry.label } : {}),

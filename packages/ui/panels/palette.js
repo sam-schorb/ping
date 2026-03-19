@@ -10,9 +10,16 @@ function escapeHtml(value) {
 
 export const DEFAULT_PALETTE_MENU_CATEGORY_ID = "basic";
 
-const BASIC_MENU_TYPES = new Set(["pulse", "out", "add", "set", "const1", "speed"]);
+const BASIC_MENU_TYPES = new Set(["pulse", "out", "mux", "every", "set"]);
 const CATEGORY_ORDER = ["Sources", "Sinks", "Routing", "Math", "Constants", "Modifiers", "State", "Logic"];
 const STACKED_CATEGORY_THRESHOLD = 5;
+
+function normalizeSearchText(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replaceAll(/\s+/g, " ");
+}
 
 function normalizeCategoryId(label) {
   return String(label ?? "")
@@ -61,36 +68,51 @@ function createMenuIcon(item, icons) {
   `;
 }
 
-function createBuiltInMenuItem(item) {
+function createBuiltInMenuItem(item, order) {
   return {
     id: item.type,
     label: item.label,
     action: "create-node",
     type: item.type,
+    category: item.category,
     icon: item.icon,
     color: item.color,
+    order,
+    searchTerms: [item.label, item.type].map((value) => normalizeSearchText(value)),
     testId: `palette-menu-${item.type}`,
   };
 }
 
-function createGroupMenuItem(group) {
+function createGroupMenuItem(group, order) {
+  const label = group.name ?? group.id;
+
   return {
     id: group.id,
-    label: group.name ?? group.id,
+    label,
     action: "create-group-node",
     groupRef: group.id,
+    category: "Groups",
     icon: "group",
     color: "#7f786d",
+    order,
+    searchTerms: [label, group.id].map((value) => normalizeSearchText(value)),
     testId: `palette-menu-group-${group.id}`,
   };
 }
 
-function buildPaletteMenuCategories(palette, groups) {
-  const builtInItems = palette.map(createBuiltInMenuItem);
+function buildPaletteMenuEntries(palette, groups) {
+  const builtInItems = palette.map((item, index) => createBuiltInMenuItem(item, index));
+  const groupItems = Object.values(groups ?? {}).map((group, index) =>
+    createGroupMenuItem(group, builtInItems.length + index),
+  );
+
+  return [...builtInItems, ...groupItems];
+}
+
+function buildPaletteMenuCategories(items) {
   const categories = [];
   const seenCategoryIds = new Set();
-
-  const basicItems = builtInItems.filter((item) => BASIC_MENU_TYPES.has(item.type));
+  const basicItems = items.filter((item) => item.action === "create-node" && BASIC_MENU_TYPES.has(item.type));
 
   if (basicItems.length > 0) {
     categories.push({
@@ -102,26 +124,24 @@ function buildPaletteMenuCategories(palette, groups) {
   }
 
   for (const category of CATEGORY_ORDER) {
-    const items = palette
-      .filter((item) => item.category === category)
-      .map(createBuiltInMenuItem);
+    const categoryItems = items.filter((item) => item.category === category);
     const categoryId = normalizeCategoryId(category);
 
-    if (items.length === 0 || seenCategoryIds.has(categoryId)) {
+    if (categoryItems.length === 0 || seenCategoryIds.has(categoryId)) {
       continue;
     }
 
     categories.push({
       id: categoryId,
       label: getCategoryDisplayLabel(category),
-      items,
+      items: categoryItems,
     });
     seenCategoryIds.add(categoryId);
   }
 
   const extraCategoryLabels = [
     ...new Set(
-      palette
+      items
         .map((item) => item.category)
         .filter((category) => typeof category === "string" && category.trim() !== "")
         .filter((category) => !CATEGORY_ORDER.includes(category)),
@@ -138,39 +158,86 @@ function buildPaletteMenuCategories(palette, groups) {
     categories.push({
       id: categoryId,
       label: getCategoryDisplayLabel(category),
-      items: palette.filter((item) => item.category === category).map(createBuiltInMenuItem),
+      items: items.filter((item) => item.category === category),
     });
     seenCategoryIds.add(categoryId);
-  }
-
-  const groupItems = Object.values(groups ?? {}).map(createGroupMenuItem);
-
-  if (groupItems.length > 0) {
-    categories.push({
-      id: "groups",
-      label: "groups",
-      items: groupItems,
-    });
   }
 
   return categories;
 }
 
-export function getPaletteMenuModel({ palette, groups, activeCategory }) {
-  const categories = buildPaletteMenuCategories(palette, groups);
+function getSearchRank(item, query) {
+  let bestRank = Number.POSITIVE_INFINITY;
+
+  for (const term of item.searchTerms) {
+    if (!term) {
+      continue;
+    }
+
+    if (term === query) {
+      bestRank = Math.min(bestRank, 0);
+      continue;
+    }
+
+    if (term.startsWith(query)) {
+      bestRank = Math.min(bestRank, 1);
+      continue;
+    }
+
+    if (term.includes(query)) {
+      bestRank = Math.min(bestRank, 2);
+    }
+  }
+
+  return Number.isFinite(bestRank) ? bestRank : null;
+}
+
+export function getPaletteMenuModel({ palette, groups, activeCategory, query = "" }) {
+  const items = buildPaletteMenuEntries(palette, groups);
+  const categories = buildPaletteMenuCategories(items);
   const activeCategoryId = categories.some((category) => category.id === activeCategory)
     ? activeCategory
     : categories[0]?.id ?? DEFAULT_PALETTE_MENU_CATEGORY_ID;
   const selectedCategory = categories.find((category) => category.id === activeCategoryId);
+  const normalizedQuery = normalizeSearchText(query);
+  const isSearching = normalizedQuery !== "";
+  const categorySummaries = categories.map((category) => ({
+    id: category.id,
+    label: category.label,
+    count: category.items.length,
+  }));
+
+  if (isSearching) {
+    const matchedItems = items
+      .map((item) => ({
+        item,
+        rank: getSearchRank(item, normalizedQuery),
+      }))
+      .filter((entry) => entry.rank !== null)
+      .sort((left, right) => left.rank - right.rank || left.item.order - right.item.order)
+      .map(({ item }) => item);
+
+    return {
+      mode: "search",
+      categories: categorySummaries,
+      activeCategoryId,
+      items: matchedItems,
+      matchCount: matchedItems.length,
+      query,
+      showItemMeta: true,
+      emptyMessage: `No nodes match "${query.trim()}".`,
+    };
+  }
 
   return {
-    categories: categories.map((category) => ({
-      id: category.id,
-      label: category.label,
-      count: category.items.length,
-    })),
+    mode: "category",
+    categories: categorySummaries,
     activeCategoryId,
+    query,
     items: selectedCategory?.items ?? [],
+    matchCount: selectedCategory?.items.length ?? 0,
+    showItemMeta: false,
+    emptyMessage: "No nodes available in this category.",
   };
 }
 
@@ -232,47 +299,68 @@ export function renderPalettePanel({ palette, groups }) {
   `;
 }
 
-export function renderPaletteMenu({ palette, groups, activeCategory, icons }) {
-  const model = getPaletteMenuModel({ palette, groups, activeCategory });
+export function renderPaletteMenu({ palette, groups, activeCategory, query = "", icons }) {
+  const model = getPaletteMenuModel({ palette, groups, activeCategory, query });
   const categoryRows = buildPaletteMenuCategoryRows(model.categories);
   const categoryLayout = categoryRows.length > 1 ? "stacked" : "single";
 
   return `
-    <div
-      class="ping-editor__menu-categories"
-      data-menu-category-layout="${categoryLayout}"
-      aria-label="Node categories"
-    >
-      ${categoryRows
-        .map(
-          (row, rowIndex) => `
+    <div class="ping-editor__menu-header" data-menu-mode="${model.mode}">
+      <input
+        class="ping-editor__menu-search-input"
+        type="text"
+        name="menu-query"
+        value="${escapeHtml(query)}"
+        placeholder="Search nodes"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        data-action="search-menu"
+        data-testid="palette-menu-search"
+        aria-label="Search nodes"
+      />
+      ${
+        model.mode === "search"
+          ? ""
+          : `
             <div
-              class="ping-editor__menu-category-row"
-              role="tablist"
-              aria-label="Node categories${categoryRows.length > 1 ? ` row ${rowIndex + 1}` : ""}"
-              data-menu-category-row="${rowIndex}"
-              style="--ping-menu-category-columns:${row.length};"
+              class="ping-editor__menu-categories"
+              data-menu-category-layout="${categoryLayout}"
+              aria-label="Node categories"
             >
-              ${row
+              ${categoryRows
                 .map(
-                  (category) => `
-                    <button
-                      class="ping-editor__menu-category ${model.activeCategoryId === category.id ? "is-active" : ""}"
-                      type="button"
-                      data-action="set-menu-category"
-                      data-menu-category="${escapeHtml(category.id)}"
-                      data-testid="palette-menu-category-${escapeHtml(category.id)}"
-                      aria-pressed="${model.activeCategoryId === category.id ? "true" : "false"}"
+                  (row, rowIndex) => `
+                    <div
+                      class="ping-editor__menu-category-row"
+                      role="tablist"
+                      aria-label="Node categories${categoryRows.length > 1 ? ` row ${rowIndex + 1}` : ""}"
+                      data-menu-category-row="${rowIndex}"
+                      style="--ping-menu-category-columns:${row.length};"
                     >
-                      ${escapeHtml(category.label)}
-                    </button>
+                      ${row
+                        .map(
+                          (category) => `
+                            <button
+                              class="ping-editor__menu-category ${model.activeCategoryId === category.id ? "is-active" : ""}"
+                              type="button"
+                              data-action="set-menu-category"
+                              data-menu-category="${escapeHtml(category.id)}"
+                              data-testid="palette-menu-category-${escapeHtml(category.id)}"
+                              aria-pressed="${model.activeCategoryId === category.id ? "true" : "false"}"
+                            >
+                              ${escapeHtml(category.label)}
+                            </button>
+                          `,
+                        )
+                        .join("")}
+                    </div>
                   `,
                 )
                 .join("")}
             </div>
-          `,
-        )
-        .join("")}
+          `
+      }
     </div>
     <div class="ping-editor__menu-list" data-testid="palette-menu-list">
       ${
@@ -294,12 +382,19 @@ export function renderPaletteMenu({ palette, groups, activeCategory, icons }) {
                     aria-label="Create ${escapeHtml(item.label)}"
                   >
                     ${createMenuIcon(item, icons)}
-                    <span class="ping-editor__menu-item-label">${escapeHtml(item.label)}</span>
+                    <span class="ping-editor__menu-item-body">
+                      <span class="ping-editor__menu-item-label">${escapeHtml(item.label)}</span>
+                      ${
+                        model.showItemMeta
+                          ? `<span class="ping-editor__menu-item-meta">${escapeHtml(getCategoryDisplayLabel(item.category))}</span>`
+                          : ""
+                      }
+                    </span>
                   </button>
                 `;
               })
               .join("")
-          : '<p class="ping-editor__menu-empty">No nodes available in this category.</p>'
+          : `<p class="ping-editor__menu-empty">${escapeHtml(model.emptyMessage)}</p>`
       }
     </div>
   `;

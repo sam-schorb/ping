@@ -1,8 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createDefaultSampleSlots, DEFAULT_TEMPO_BPM, routeGraph } from "@ping/core";
-import { createEditor, DEFAULT_UI_CONFIG } from "../src/index.js";
+import {
+  createDefaultSampleSlots,
+  DEFAULT_TEMPO_BPM,
+  getPortAnchor,
+  routeGraph,
+} from "@ping/core";
+import {
+  buildObstacleAwarePreviewRoute,
+  createEditor,
+  DEFAULT_UI_CONFIG,
+  worldToScreen,
+} from "../src/index.js";
 import {
   createEditorHarness,
   createRuntimeStub,
@@ -62,6 +72,15 @@ function createRoundedRectPath(x, y, width, height, radius) {
   ].join(" ");
 }
 
+function toScreenPath(route, camera = { x: 0, y: 0, scale: 1 }, config = DEFAULT_UI_CONFIG) {
+  const points = route.points.map((point) => worldToScreen(point, camera, config));
+
+  return `M ${points[0].x} ${points[0].y}${points
+    .slice(1)
+    .map((point) => ` L ${point.x} ${point.y}`)
+    .join("")}`;
+}
+
 async function createNodeFromMenu(harness, type) {
   harness.click(harness.container.querySelector('[data-action="open-menu"]'));
   await harness.flush();
@@ -82,6 +101,44 @@ function dispatchWheel(window, element, options = {}) {
       metaKey: options.metaKey ?? false,
     }),
   );
+}
+
+function createGroupableSnapshot() {
+  return {
+    nodes: [
+      { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+      { id: "node-b", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
+      { id: "node-c", type: "out", pos: { x: 10, y: 2 }, rot: 0, params: {} },
+    ],
+    edges: [
+      {
+        id: "edge-a",
+        from: { nodeId: "node-a", portSlot: 0 },
+        to: { nodeId: "node-b", portSlot: 0 },
+        manualCorners: [],
+      },
+      {
+        id: "edge-b",
+        from: { nodeId: "node-b", portSlot: 0 },
+        to: { nodeId: "node-c", portSlot: 0 },
+        manualCorners: [],
+      },
+    ],
+    groups: {},
+  };
+}
+
+async function openGroupDialogForConnectedPair(harness) {
+  harness.pointerDown(harness.query("node-node-a"), { clientX: 80, clientY: 80 });
+  harness.pointerUp({ clientX: 80, clientY: 80 });
+  await harness.flush();
+
+  harness.pointerDown(harness.query("node-node-b"), { clientX: 140, clientY: 80, shiftKey: true });
+  harness.pointerUp({ clientX: 140, clientY: 80, shiftKey: true });
+  await harness.flush();
+
+  harness.click(harness.container.querySelector('[data-action="open-group-config"]'));
+  await harness.flush();
 }
 
 test("editor renders palette, fallback routes, diagnostics, and sample controls", async () => {
@@ -681,28 +738,7 @@ test("shift-click grouping includes the original selected node", async () => {
 
   try {
     const harness = createEditorHarness({
-      snapshot: {
-        nodes: [
-          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
-          { id: "node-b", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
-          { id: "node-c", type: "out", pos: { x: 10, y: 2 }, rot: 0, params: {} },
-        ],
-        edges: [
-          {
-            id: "edge-a",
-            from: { nodeId: "node-a", portSlot: 0 },
-            to: { nodeId: "node-b", portSlot: 0 },
-            manualCorners: [],
-          },
-          {
-            id: "edge-b",
-            from: { nodeId: "node-b", portSlot: 0 },
-            to: { nodeId: "node-c", portSlot: 0 },
-            manualCorners: [],
-          },
-        ],
-        groups: {},
-      },
+      snapshot: createGroupableSnapshot(),
     });
     await harness.flush();
 
@@ -731,6 +767,44 @@ test("shift-click grouping includes the original selected node", async () => {
       harness.snapshot.groups[groupId].graph.nodes.map((node) => node.id).sort(),
       ["node-a", "node-b"],
     );
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("group dialog close actions remove the overlay", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: createGroupableSnapshot(),
+    });
+    await harness.flush();
+
+    await openGroupDialogForConnectedPair(harness);
+    assert.ok(harness.query("group-config"));
+
+    harness.click(
+      harness.container.querySelector('.ping-editor__group-header [data-action="close-group-config"]'),
+    );
+    await harness.flush();
+
+    assert.equal(harness.query("group-config"), null);
+    assert.equal(harness.query("group-confirm"), null);
+
+    harness.click(harness.container.querySelector('[data-action="open-group-config"]'));
+    await harness.flush();
+    assert.ok(harness.query("group-config"));
+
+    harness.click(
+      harness.container.querySelector('.ping-editor__action-row [data-action="close-group-config"]'),
+    );
+    await harness.flush();
+
+    assert.equal(harness.query("group-config"), null);
+    assert.equal(harness.query("group-confirm"), null);
 
     harness.unmount();
   } finally {
@@ -770,6 +844,29 @@ test("editor renders sidebar tabs as a fixed header strip instead of a scroller"
     assert.match(
       styles,
       /\.ping-editor__tab\s*\{[\s\S]*display:\s*grid;[\s\S]*place-items:\s*center;[\s\S]*min-height:\s*52px;[\s\S]*padding:\s*0 8px;/,
+    );
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("group dialog styles keep the primary action visible and spaced from the mappings", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness();
+    await harness.flush();
+
+    const styles = harness.container.querySelector("[data-ping-editor-style]").textContent;
+    assert.match(
+      styles,
+      /\.ping-editor__panel-button\.is-primary\s*\{[\s\S]*background:\s*var\(--ping-chrome-accent\);[\s\S]*border-color:\s*var\(--ping-chrome-accent\);[\s\S]*color:\s*var\(--ping-chrome-on-accent\);/,
+    );
+    assert.match(
+      styles,
+      /\.ping-editor__group-dialog \.ping-editor__action-row\s*\{[\s\S]*margin-top:\s*16px;/,
     );
 
     harness.unmount();
@@ -832,6 +929,82 @@ test("editor renders add-node categories as a fixed stacked header instead of a 
   }
 });
 
+test("add-node menu search filters across all nodes and clears back to the active category", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness();
+    await harness.flush();
+
+    harness.click(harness.container.querySelector('[data-action="open-menu"]'));
+    await harness.flush();
+
+    harness.click(harness.query("palette-menu-category-routing"));
+    await harness.flush();
+
+    assert.equal(harness.query("palette-menu-category-routing").getAttribute("aria-pressed"), "true");
+    assert.ok(harness.query("palette-menu-mux"));
+    assert.equal(harness.container.querySelector('[data-testid="palette-menu-pulse"]'), null);
+
+    const searchInput = harness.query("palette-menu-search");
+    searchInput.value = "pulse";
+    searchInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await harness.flush();
+
+    assert.equal(harness.container.querySelector(".ping-editor__menu-categories"), null);
+    assert.equal(harness.container.querySelector('[data-testid="palette-menu-search-summary"]'), null);
+    assert.ok(harness.query("palette-menu-pulse"));
+    assert.equal(harness.container.querySelector('[data-testid="palette-menu-mux"]'), null);
+
+    const clearedInput = harness.query("palette-menu-search");
+    clearedInput.value = "";
+    clearedInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await harness.flush();
+
+    assert.ok(harness.query("palette-menu-category-routing"));
+    assert.equal(harness.query("palette-menu-category-routing").getAttribute("aria-pressed"), "true");
+    assert.ok(harness.query("palette-menu-mux"));
+    assert.equal(harness.container.querySelector('[data-testid="palette-menu-pulse"]'), null);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("add-node menu autofocuses search and preserves focus while filtering", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness();
+    await harness.flush();
+
+    harness.container.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", {
+        key: "N",
+        bubbles: true,
+      }),
+    );
+    await harness.flush();
+
+    const searchInput = harness.query("palette-menu-search");
+    assert.equal(dom.window.document.activeElement, searchInput);
+
+    searchInput.value = "pul";
+    searchInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await harness.flush();
+
+    const updatedSearchInput = harness.query("palette-menu-search");
+    assert.equal(dom.window.document.activeElement, updatedSearchInput);
+    assert.equal(updatedSearchInput.value, "pul");
+    assert.ok(harness.query("palette-menu-pulse"));
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("add-node menu stays clickable through viewport-only rerenders", async () => {
   const dom = setupDom();
 
@@ -858,16 +1031,16 @@ test("add-node menu stays clickable through viewport-only rerenders", async () =
     await harness.flush();
 
     const menu = harness.query("palette-menu");
-    const addItemBefore = harness.query("palette-menu-add");
+    const setItemBefore = harness.query("palette-menu-set");
     assert.ok(menu);
-    assert.ok(addItemBefore);
+    assert.ok(setItemBefore);
 
     await harness.flush(2);
 
-    const addItemAfter = harness.query("palette-menu-add");
-    assert.equal(addItemAfter, addItemBefore);
+    const setItemAfter = harness.query("palette-menu-set");
+    assert.equal(setItemAfter, setItemBefore);
 
-    harness.click(addItemAfter);
+    harness.click(setItemAfter);
     await harness.flush();
 
     assert.ok(harness.query("node-node-1"));
@@ -1062,7 +1235,7 @@ test("editor exposes inspect as a dedicated sidebar tab", async () => {
     harness.click(harness.container.querySelector('[data-tab="console"]'));
     await harness.flush();
 
-    await createNodeFromMenu(harness, "add");
+    await createNodeFromMenu(harness, "set");
     await harness.flush();
 
     harness.click(harness.query("node-node-1"));
@@ -2028,6 +2201,122 @@ test("editor completes an active edge preview when the target port is clicked", 
   }
 });
 
+test("free-drag edge preview detours around blocking nodes before a target is hovered", async () => {
+  const dom = setupDom();
+
+  try {
+    const baseSnapshot = {
+      nodes: [
+        { id: "node-pulse", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: {} },
+        { id: "node-blocker", type: "set", pos: { x: 5, y: -1 }, rot: 0, params: { param: 3 } },
+      ],
+      edges: [],
+      groups: {},
+    };
+    const harness = createEditorHarness({ snapshot: baseSnapshot });
+    await harness.flush();
+
+    const outputPort = harness.query("port-node-pulse-out-0");
+    const outputPoint = getPortScreenPoint(outputPort);
+    const freeCursorScreen = {
+      clientX: 12 * DEFAULT_UI_CONFIG.grid.GRID_PX,
+      clientY: 1 * DEFAULT_UI_CONFIG.grid.GRID_PX,
+    };
+
+    harness.pointerDown(outputPort, { clientX: outputPoint.x, clientY: outputPoint.y });
+    harness.pointerMove(harness.query("editor-viewport"), freeCursorScreen);
+    await harness.flush();
+
+    const previewPath = harness.query("edge-preview").getAttribute("d");
+    const expectedRoute = buildObstacleAwarePreviewRoute({
+      snapshot: baseSnapshot,
+      registry: TEST_REGISTRY,
+      fromAnchor: getPortAnchor(
+        baseSnapshot.nodes[0],
+        "out",
+        0,
+        baseSnapshot,
+        TEST_REGISTRY,
+        "preview",
+      ),
+      toPoint: {
+        x: freeCursorScreen.clientX / DEFAULT_UI_CONFIG.grid.GRID_PX,
+        y: freeCursorScreen.clientY / DEFAULT_UI_CONFIG.grid.GRID_PX,
+      },
+      bendPreference: "horizontal-first",
+      stubLength: 1,
+    });
+
+    assert.equal(previewPath, toScreenPath(expectedRoute));
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("edge preview matches the committed routed path when hovering a valid target port", async () => {
+  const dom = setupDom();
+
+  try {
+    const baseSnapshot = {
+      nodes: [
+        { id: "node-pulse", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: {} },
+        { id: "node-blocker", type: "set", pos: { x: 5, y: -1 }, rot: 0, params: { param: 3 } },
+        { id: "node-output", type: "out", pos: { x: 12, y: 0 }, rot: 0, params: {} },
+      ],
+      edges: [],
+      groups: {},
+    };
+    const harness = createEditorHarness({ snapshot: baseSnapshot });
+    await harness.flush();
+
+    const outputPort = harness.query("port-node-pulse-out-0");
+    const inputPort = harness.query("port-node-output-in-0");
+    const outputPoint = getPortScreenPoint(outputPort);
+    const inputPoint = getPortScreenPoint(inputPort);
+
+    harness.pointerDown(outputPort, { clientX: outputPoint.x, clientY: outputPoint.y });
+    harness.pointerMove(inputPort, { clientX: inputPoint.x, clientY: inputPoint.y });
+    await harness.flush();
+
+    const previewPath = harness.query("edge-preview").getAttribute("d");
+    const expectedRoute = routeGraph(
+      {
+        ...baseSnapshot,
+        edges: [
+          {
+            id: "edge-preview",
+            from: { nodeId: "node-pulse", portSlot: 0 },
+            to: { nodeId: "node-output", portSlot: 0 },
+            manualCorners: [],
+          },
+        ],
+      },
+      TEST_REGISTRY,
+    ).edgeRoutes.get("edge-preview");
+
+    assert.equal(previewPath, toScreenPath(expectedRoute));
+
+    harness.pointerUp({ clientX: inputPoint.x, clientY: inputPoint.y });
+    await harness.flush();
+
+    const createdEdge = harness.snapshot.edges[0];
+    assert.ok(createdEdge);
+    assert.equal(
+      harness
+        .query(`edge-${createdEdge.id}`)
+        .querySelector(".ping-editor__edge-path")
+        .getAttribute("d"),
+      previewPath,
+    );
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("editor normalizes reverse-grab cable creation to output-to-input", async () => {
   const dom = setupDom();
 
@@ -2117,10 +2406,15 @@ test("editor supports grouping, diagnostics focus, sample slot updates, and rese
     await harness.flush();
 
     assert.ok(harness.query("group-config"));
+    assert.equal(harness.query("group-preserve-delays").checked, false);
     harness.click(harness.query("group-confirm"));
     await harness.flush();
 
     assert.equal(Object.keys(harness.snapshot.groups).length, 1);
+    assert.equal(
+      harness.snapshot.groups[Object.keys(harness.snapshot.groups)[0]].preserveInternalCableDelays,
+      false,
+    );
     assert.ok(harness.snapshot.nodes.some((node) => node.type === "group"));
     harness.click(harness.container.querySelector('[data-tab="groups"]'));
     await harness.flush();
@@ -2836,9 +3130,11 @@ test("editor supports menu creation, inspect rename/param edits, and context-men
     assert.equal(harness.query("palette-menu-category-basic").getAttribute("aria-pressed"), "true");
     assert.ok(harness.query("palette-menu-pulse"));
     assert.ok(harness.query("palette-menu-out"));
-    assert.ok(harness.query("palette-menu-add"));
+    assert.ok(harness.query("palette-menu-mux"));
+    assert.ok(harness.query("palette-menu-every"));
+    assert.ok(harness.query("palette-menu-set"));
     assert.equal(harness.container.querySelector(".ping-editor__menu-item-copy"), null);
-    assert.equal(harness.container.querySelector('[data-testid="palette-menu-mux"]'), null);
+    assert.equal(harness.container.querySelector('[data-testid="palette-menu-add"]'), null);
 
     harness.click(harness.query("palette-menu-category-routing"));
     await harness.flush();
@@ -2848,7 +3144,7 @@ test("editor supports menu creation, inspect rename/param edits, and context-men
 
     harness.click(harness.query("palette-menu-category-basic"));
     await harness.flush();
-    harness.click(harness.query("palette-menu-add"));
+    harness.click(harness.query("palette-menu-set"));
     await harness.flush();
 
     assert.ok(harness.query("node-node-1"));
@@ -2925,6 +3221,7 @@ test("groups can be edited from the sidebar without resetting dialog scroll", as
           "group-a": {
             id: "group-a",
             name: "Group A",
+            preserveInternalCableDelays: true,
             graph: {
               nodes: [
                 { id: "inner-add", type: "add", pos: { x: 0, y: 0 }, rot: 0, params: { param: 2 } },
@@ -2944,6 +3241,7 @@ test("groups can be edited from the sidebar without resetting dialog scroll", as
     await harness.flush();
     harness.click(harness.container.querySelector('[data-action="edit-group"][data-group-id="group-a"]'));
     await harness.flush();
+    assert.equal(harness.query("group-preserve-delays").checked, true);
 
     harness.query("group-config").scrollTop = 96;
     harness.click(
@@ -2960,11 +3258,16 @@ test("groups can be edited from the sidebar without resetting dialog scroll", as
     await harness.flush();
     assert.equal(harness.query("group-config").scrollTop, 96);
 
+    const preserveToggle = harness.query("group-preserve-delays");
+    preserveToggle.checked = false;
+    preserveToggle.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+
     harness.click(harness.query("group-confirm"));
     await harness.flush();
 
     assert.equal(harness.snapshot.groups["group-a"].name, "Edited Group");
     assert.equal(harness.snapshot.groups["group-a"].outputs.length, 0);
+    assert.equal(harness.snapshot.groups["group-a"].preserveInternalCableDelays, false);
     assert.ok(
       harness.outputs.some(
         (output) =>
@@ -3067,7 +3370,8 @@ test("keyboard add-node creation uses the menu-open pointer anchor and restores 
     );
     await harness.flush();
 
-    const addMenuItem = harness.query("palette-menu-add");
+    const addMenuItem = harness.query("palette-menu-set");
+    assert.equal(dom.window.document.activeElement, harness.query("palette-menu-search"));
     addMenuItem.focus();
     harness.click(addMenuItem);
     await harness.flush();
@@ -3090,6 +3394,7 @@ test("keyboard add-node creation uses the menu-open pointer anchor and restores 
     await harness.flush();
 
     const pulseMenuItem = harness.query("palette-menu-pulse");
+    assert.equal(dom.window.document.activeElement, harness.query("palette-menu-search"));
     pulseMenuItem.focus();
     harness.click(pulseMenuItem);
     await harness.flush();
