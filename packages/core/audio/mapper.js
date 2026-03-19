@@ -160,11 +160,31 @@ export function createDoughPlaybackEvent({
   transport,
   slots,
   paramContext,
+  resolveSampleTarget,
   emitWarning,
 }) {
   const { slot } = getSlotForValue(runtimeEvent.value, slots);
 
   if (!slot || typeof slot.path !== "string" || slot.path.trim() === "") {
+    emitWarning?.(
+      AUDIO_WARNING_CODES.MISSING_SAMPLE,
+      `No sample is configured for slot "${slot?.id ?? "unknown"}".`,
+      {
+        slotId: slot?.id,
+      },
+    );
+    return null;
+  }
+
+  const sampleTarget =
+    typeof resolveSampleTarget === "function"
+      ? resolveSampleTarget(slot)
+      : {
+          sound: slot.id,
+          index: 0,
+        };
+
+  if (!sampleTarget || typeof sampleTarget.sound !== "string" || sampleTarget.sound.trim() === "") {
     emitWarning?.(
       AUDIO_WARNING_CODES.MISSING_SAMPLE,
       `No sample is configured for slot "${slot?.id ?? "unknown"}".`,
@@ -181,8 +201,8 @@ export function createDoughPlaybackEvent({
   return {
     time: tickToSeconds(runtimeEvent.tick, transport),
     dough: "play",
-    s: slot.id,
-    n: 0,
+    s: sampleTarget.sound,
+    n: Number.isFinite(sampleTarget.index) ? sampleTarget.index : 0,
     ...mappedParams,
   };
 }

@@ -6,5 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "dough-synth": "^0.2.0"
   }
 }

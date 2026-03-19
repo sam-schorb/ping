@@ -4,9 +4,9 @@ import {
   buildGraph,
   buildPalette,
   buildRegistryIndex,
-  createAudioBridge,
+  createAudioSession,
   createCompiledGraphPatch,
-  createDoughSampleMap,
+  createDoughAudioEngine,
   createProjectRoutingCache,
   createDefaultSampleSlots,
   DEFAULT_TEMPO_BPM,
@@ -20,7 +20,6 @@ import {
   validateGraph,
 } from "@ping/core";
 import { Editor } from "@ping/ui/react";
-import { Dough, doughsamples } from "dough-synth/dough.js";
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 const REGISTRY_INDEX = buildRegistryIndex();
@@ -57,107 +56,6 @@ function pushHistoryEntry(entries, entry) {
 }
 
 function traceAudio() {}
-
-function instrumentDough(dough) {
-  if (!dough || dough.__pingInstrumented) {
-    return dough;
-  }
-
-  const wrap = (methodName) => {
-    const original = dough[methodName];
-
-    if (typeof original !== "function") {
-      return;
-    }
-
-    dough[methodName] = async function wrappedMethod(...args) {
-      traceAudio(`dough.${methodName}:start`, args[0]);
-
-      try {
-        const result = await original.apply(this, args);
-        traceAudio(`dough.${methodName}:done`, args[0]);
-        return result;
-      } catch (error) {
-        traceAudio(`dough.${methodName}:error`, {
-          args: args[0],
-          message: error?.message ?? "unknown error",
-        });
-        throw error;
-      }
-    };
-  };
-
-  wrap("resume");
-  wrap("prepare");
-  wrap("evaluate");
-  wrap("send");
-  wrap("maybeLoadFile");
-  wrap("stopWorklet");
-
-  if (dough.ready && typeof dough.ready.then === "function") {
-    dough.ready.then(
-      () => {
-        traceAudio("dough.ready:resolved", {
-          sampleRate: dough.sampleRate,
-          maxVoices: dough.MAX_VOICES,
-          maxEvents: dough.MAX_EVENTS,
-        });
-      },
-      (error) => {
-        traceAudio("dough.ready:rejected", {
-          message: error?.message ?? "unknown error",
-        });
-      },
-    );
-  }
-
-  dough.__pingInstrumented = true;
-  return dough;
-}
-
-const eagerDoughState = {
-  instance: null,
-  error: null,
-};
-
-function createEagerDough() {
-  // Dough expects an onTick callback on every clock message even though the
-  // bridge takes over scheduling by wrapping the worklet port later.
-  const dough = instrumentDough(
-    new Dough({
-      base: DOUGH_BASE_PATH,
-      onTick() {},
-    }),
-  );
-  traceAudio("setupAudio:dough-created", {
-    base: dough.base,
-    sampleRate: dough.sampleRate,
-  });
-  return dough;
-}
-
-if (typeof window !== "undefined") {
-  try {
-    eagerDoughState.instance = createEagerDough();
-  } catch (error) {
-    eagerDoughState.error = error;
-    traceAudio("setupAudio:dough-create-failed", {
-      message: error?.message ?? "unknown error",
-    });
-  }
-}
-
-function getEagerDough() {
-  if (eagerDoughState.error) {
-    throw eagerDoughState.error;
-  }
-
-  if (!eagerDoughState.instance) {
-    eagerDoughState.instance = createEagerDough();
-  }
-
-  return eagerDoughState.instance;
-}
 
 function escapeHtml(value) {
   return String(value)
@@ -287,11 +185,9 @@ export function Ping() {
   const routingCacheRef = useRef(createProjectRoutingCache());
   const compiledGraphRef = useRef(null);
   const graphUpdateModeRef = useRef("replace");
-  const doughRef = useRef(null);
+  const audioSessionRef = useRef(null);
   const audioContextRef = useRef(null);
-  const audioBridgeRef = useRef(null);
-  const audioBridgeActiveRef = useRef(false);
-  const audioArmPromiseRef = useRef(null);
+  const audioSchedulingActiveRef = useRef(false);
   const pendingAudioArmRef = useRef(false);
   const resetTransportClockRef = useRef(null);
   const armAudioEngineRef = useRef(null);
@@ -399,15 +295,6 @@ export function Ping() {
     return Math.max(0, getClockTimeSec(audioContext) - getAudibleLatencySec(audioContext));
   }
 
-  async function syncDoughSampleSlots(nextSlots = slotsRef.current) {
-    const sampleMap = createDoughSampleMap(nextSlots);
-    await doughsamples(sampleMap, "");
-    traceAudio("syncDoughSampleSlots:done", {
-      slotCount: nextSlots?.length ?? 0,
-      sampleKeys: Object.keys(sampleMap),
-    });
-  }
-
   function createBridgeTransport() {
     const transport = transportRef.current;
 
@@ -424,38 +311,37 @@ export function Ping() {
     };
   }
 
-  function syncAudioBridgeTransport() {
-    const bridge = audioBridgeRef.current;
+  function syncAudioSessionTransport() {
+    const session = audioSessionRef.current;
 
-    if (!bridge) {
+    if (!session) {
       return;
     }
 
     const nextTransport = createBridgeTransport();
+    session.updateTransport(nextTransport ?? undefined);
 
-    if (!audioBridgeActiveRef.current) {
+    if (!audioSchedulingActiveRef.current) {
       if (nextTransport) {
-        bridge.updateTransport(nextTransport);
-        traceAudio("syncAudioBridgeTransport:updated-while-inactive", {
+        traceAudio("syncAudioSessionTransport:updated-while-inactive", {
           transport: nextTransport,
         });
       } else {
-        traceAudio("syncAudioBridgeTransport:inactive-no-transport");
+        traceAudio("syncAudioSessionTransport:inactive-no-transport");
       }
       return;
     }
 
     if (nextTransport) {
-      bridge.updateTransport(nextTransport);
-      bridge.start();
-      traceAudio("syncAudioBridgeTransport:start", {
+      session.setSchedulingActive(true);
+      traceAudio("syncAudioSessionTransport:start", {
         transport: nextTransport,
       });
       return;
     }
 
-    bridge.stop();
-    traceAudio("syncAudioBridgeTransport:stop-no-transport");
+    session.setSchedulingActive(false);
+    traceAudio("syncAudioSessionTransport:stop-no-transport");
   }
 
   function resetTransportClock(nextBpm, nextTick = 0, originTimeSec = getClockTimeSec()) {
@@ -464,7 +350,7 @@ export function Ping() {
       originTick: nextTick,
       bpm: nextBpm > 0 ? nextBpm : 0,
     };
-    syncAudioBridgeTransport();
+    syncAudioSessionTransport();
   }
 
   resetTransportClockRef.current = resetTransportClock;
@@ -562,7 +448,8 @@ export function Ping() {
 
   function reportAudioInitError(error) {
     pendingAudioArmRef.current = false;
-    audioBridgeActiveRef.current = false;
+    audioSchedulingActiveRef.current = false;
+    audioSessionRef.current?.setSchedulingActive(false);
     traceAudio("reportAudioInitError", {
       message: error?.message ?? "unknown error",
       stack: error?.stack,
@@ -579,144 +466,54 @@ export function Ping() {
 
   reportAudioInitErrorRef.current = reportAudioInitError;
 
-  async function preloadActiveSamples(dough, slots = slotsRef.current) {
-    if (!dough?.maybeLoadFile) {
-      traceAudio("preloadActiveSamples:skip-no-maybeLoadFile");
+  async function armAudioEngine(session = audioSessionRef.current) {
+    if (!session) {
+      traceAudio("armAudioEngine:skip-no-session");
       return;
     }
 
-    const seenSlotIds = new Set();
+    traceAudio("armAudioEngine:start", {
+      tempo: tempoRef.current,
+      slots: slotsRef.current,
+    });
+    const audioContext = await session.arm();
+    traceAudio("armAudioEngine:initAudio-resolved", {
+      state: audioContext?.state,
+      currentTime: audioContext?.currentTime,
+      sampleRate: audioContext?.sampleRate,
+    });
+    traceAudio("armAudioEngine:latency", {
+      baseLatency: audioContext?.baseLatency,
+      outputLatency: audioContext?.outputLatency,
+      audibleLatencySec: getAudibleLatencySec(audioContext),
+    });
 
-    for (const slot of slots ?? []) {
-      if (!slot?.id || seenSlotIds.has(slot.id)) {
-        continue;
-      }
-
-      seenSlotIds.add(slot.id);
-
-      if (typeof slot.path !== "string" || slot.path.trim() === "") {
-        traceAudio("preloadActiveSamples:skip-empty-slot", slot);
-        continue;
-      }
-
-      try {
-        traceAudio("preloadActiveSamples:slot:start", slot);
-        await dough.maybeLoadFile({
-          s: slot.id,
-          n: 0,
-        });
-        traceAudio("preloadActiveSamples:slot:done", slot);
-      } catch (error) {
-        traceAudio("preloadActiveSamples:slot:error", {
-          slot,
-          message: error?.message ?? "unknown error",
-        });
-        pushOutput({
-          type: "audio/warning",
-          payload: {
-            code: "AUDIO_PRELOAD_FAIL",
-            message: `Failed to preload sample slot "${slot.id}": ${error?.message ?? "unknown error"}.`,
-          },
-        });
-      }
+    audioContextRef.current = audioContext;
+    runtime.resetPulses();
+    if (compiledGraphRef.current) {
+      previewRuntime.setGraph(compiledGraphRef.current);
+    } else {
+      previewRuntime.resetPulses();
     }
-  }
-
-  async function armAudioEngine(dough = doughRef.current) {
-    if (!dough) {
-      traceAudio("armAudioEngine:skip-no-dough");
-      return;
-    }
-
-    if (audioArmPromiseRef.current) {
-      traceAudio("armAudioEngine:reuse-pending-promise");
-      return audioArmPromiseRef.current;
-    }
-
-    const armPromise = (async () => {
-      traceAudio("armAudioEngine:start", {
-        tempo: tempoRef.current,
-        slots: slotsRef.current,
-      });
-      const audioContext = (await dough.initAudio) ?? null;
-      traceAudio("armAudioEngine:initAudio-resolved", {
-        state: audioContext?.state,
-        currentTime: audioContext?.currentTime,
-        sampleRate: audioContext?.sampleRate,
-      });
-      await dough.ready;
-      traceAudio("armAudioEngine:dough-ready");
-
-      if (doughRef.current !== dough) {
-        traceAudio("armAudioEngine:abort-dough-changed-before-resume");
-        return;
-      }
-
-      await dough.resume?.();
-      traceAudio("armAudioEngine:resume-done", {
-        state: audioContext?.state,
-        currentTime: audioContext?.currentTime,
-      });
-      traceAudio("armAudioEngine:latency", {
-        baseLatency: audioContext?.baseLatency,
-        outputLatency: audioContext?.outputLatency,
-        audibleLatencySec: getAudibleLatencySec(audioContext),
-      });
-
-      if (doughRef.current !== dough) {
-        traceAudio("armAudioEngine:abort-dough-changed-before-preload");
-        return;
-      }
-
-      await syncDoughSampleSlots(slotsRef.current);
-      traceAudio("armAudioEngine:slot-map-ready", {
-        slots: slotsRef.current,
-      });
-      await preloadActiveSamples(dough);
-
-      if (doughRef.current !== dough) {
-        traceAudio("armAudioEngine:abort-dough-changed-before-clock-reset");
-        return;
-      }
-
-      audioContextRef.current = audioContext;
-      runtime.resetPulses();
-      if (compiledGraphRef.current) {
-        previewRuntime.setGraph(compiledGraphRef.current);
-      } else {
-        previewRuntime.resetPulses();
-      }
-      const originTimeSec = getClockTimeSec(audioContext);
-      audioBridgeActiveRef.current = true;
-      traceAudio("armAudioEngine:resetTransportClock", {
-        tempo: tempoRef.current,
-        originTimeSec,
-      });
-      resetTransportClock(tempoRef.current, 0, originTimeSec);
-      traceAudio("armAudioEngine:bridge-metrics-after-reset", audioBridgeRef.current?.getMetrics?.());
-      setAudioStatus("running");
-      pushOutput({
-        type: "audio/status",
-        payload: {
-          message: "Audio armed.",
-        },
-      });
-    })();
-
-    audioArmPromiseRef.current = armPromise;
-
-    try {
-      await armPromise;
-    } finally {
-      if (audioArmPromiseRef.current === armPromise) {
-        audioArmPromiseRef.current = null;
-      }
-
-      traceAudio("armAudioEngine:complete", {
-        audioStatus,
-        bridgeMetrics: audioBridgeRef.current?.getMetrics?.(),
-      });
-    }
+    const originTimeSec = getClockTimeSec(audioContext);
+    audioSchedulingActiveRef.current = true;
+    traceAudio("armAudioEngine:resetTransportClock", {
+      tempo: tempoRef.current,
+      originTimeSec,
+    });
+    resetTransportClock(tempoRef.current, 0, originTimeSec);
+    traceAudio("armAudioEngine:session-metrics-after-reset", audioSessionRef.current?.getMetrics?.());
+    setAudioStatus("running");
+    pushOutput({
+      type: "audio/status",
+      payload: {
+        message: "Audio armed.",
+      },
+    });
+    traceAudio("armAudioEngine:complete", {
+      audioStatus,
+      audioMetrics: audioSessionRef.current?.getMetrics?.(),
+    });
   }
 
   armAudioEngineRef.current = armAudioEngine;
@@ -724,7 +521,7 @@ export function Ping() {
   function requestAudioArm() {
     traceAudio("requestAudioArm", {
       audioStatus,
-      hasDough: Boolean(doughRef.current),
+      hasAudioSession: Boolean(audioSessionRef.current),
       pendingAudioArm: pendingAudioArmRef.current,
     });
 
@@ -732,16 +529,16 @@ export function Ping() {
       return;
     }
 
-    const dough = doughRef.current;
+    const session = audioSessionRef.current;
 
-    if (!dough) {
+    if (!session) {
       pendingAudioArmRef.current = true;
       return;
     }
 
     pendingAudioArmRef.current = false;
     setAudioStatus("arming");
-    void armAudioEngineRef.current?.(dough).catch((error) => {
+    void armAudioEngineRef.current?.(session).catch((error) => {
       reportAudioInitErrorRef.current?.(error);
     });
   }
@@ -912,7 +709,15 @@ export function Ping() {
 
     function tickPreview() {
       const transport = transportRef.current;
-      const nowTimeSec = getAudibleClockTimeSec();
+      const audioContext = audioContextRef.current;
+      const baseLatency = Number.isFinite(audioContext?.baseLatency) ? audioContext.baseLatency : 0;
+      const outputLatency = Number.isFinite(audioContext?.outputLatency)
+        ? audioContext.outputLatency
+        : 0;
+      const nowTimeSec = Math.max(
+        0,
+        (audioContext?.currentTime ?? performance.now() / 1000) - (baseLatency + outputLatency),
+      );
       const nowTick =
         transport.bpm > 0
           ? transport.originTick + (nowTimeSec - transport.originTimeSec) * (transport.bpm / 60)
@@ -936,7 +741,7 @@ export function Ping() {
   useEffect(() => {
     slotsRef.current = slots;
     traceAudio("slots:sync", slots);
-    audioBridgeRef.current?.updateSlots(slots);
+    audioSessionRef.current?.updateSlots(slots);
   }, [slots]);
 
   useEffect(() => {
@@ -947,7 +752,7 @@ export function Ping() {
   useEffect(() => {
     let disposed = false;
 
-    async function setupAudio() {
+    function setupAudio() {
       traceAudio("setupAudio:start");
 
       try {
@@ -956,17 +761,16 @@ export function Ping() {
           return;
         }
 
-        doughRef.current = getEagerDough();
-
-        const bridge = createAudioBridge({
+        const session = createAudioSession({
           runtime,
           registry: REGISTRY_API,
-          dough: doughRef.current,
+          engine: createDoughAudioEngine({
+            basePath: DOUGH_BASE_PATH,
+          }),
           transport: createBridgeTransport() ?? undefined,
-          getSlots: () => slotsRef.current,
-          loadSamples: syncDoughSampleSlots,
+          slots: slotsRef.current,
           onWarning(warning) {
-            traceAudio("bridge:onWarning", warning);
+            traceAudio("audioSession:onWarning", warning);
             pushOutput({
               type: "audio/warning",
               payload: warning,
@@ -983,10 +787,15 @@ export function Ping() {
           },
         });
 
-        audioBridgeRef.current = bridge;
-        traceAudio("setupAudio:bridge-created", {
+        if (disposed) {
+          void session.dispose();
+          return;
+        }
+
+        audioSessionRef.current = session;
+        traceAudio("setupAudio:session-created", {
           transport: createBridgeTransport(),
-          bridgeMetrics: bridge.getMetrics(),
+          audioMetrics: session.getMetrics(),
         });
         setAudioStatus("awaiting-gesture");
 
@@ -999,23 +808,17 @@ export function Ping() {
       }
     }
 
-    void setupAudio();
+    setupAudio();
 
     return () => {
       disposed = true;
       traceAudio("setupAudio:cleanup:start");
-      audioBridgeActiveRef.current = false;
-      audioArmPromiseRef.current = null;
+      audioSchedulingActiveRef.current = false;
       audioContextRef.current = null;
-      audioBridgeRef.current?.stop();
-      audioBridgeRef.current = null;
 
-      const dough = doughRef.current;
-      doughRef.current = null;
-
-      if (dough?.worklet) {
-        void dough.stopWorklet?.();
-      }
+      const session = audioSessionRef.current;
+      audioSessionRef.current = null;
+      void session?.dispose?.();
 
       traceAudio("setupAudio:cleanup:done");
     };
@@ -1023,8 +826,8 @@ export function Ping() {
 
   useEffect(() => {
     window.__PING_AUDIO_DEBUG__ = {
-      get bridgeMetrics() {
-        return audioBridgeRef.current?.getMetrics?.();
+      get audioMetrics() {
+        return audioSessionRef.current?.getMetrics?.();
       },
       get audioContextState() {
         return audioContextRef.current?.state ?? null;
@@ -1046,7 +849,7 @@ export function Ping() {
       },
       runtime,
       previewRuntime,
-      dough: doughRef.current,
+      audioSession: audioSessionRef.current,
     };
 
     traceAudio("debug-handle:installed");

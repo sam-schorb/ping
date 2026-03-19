@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createAudioBridge } from "../src/index.js";
+import { createAudioBridge, createAudioParamContext, createDoughPlaybackEvent } from "../src/index.js";
 import { createRuntime, loadRuntimeFixture } from "./helpers/runtime-fixtures.js";
 import {
   createAudioRuntimeStub,
-  createFakeDough,
+  createFakeAudioEngine,
   createFixtureSlots,
   createRegistryApi,
   flushAsyncWork,
@@ -15,29 +15,25 @@ import {
 test("audio bridge queries the runtime from the current clock boundary and schedules matching events", async () => {
   const fixture = await loadAudioFixture("valid-min.json");
   const runtime = createAudioRuntimeStub(fixture.events);
-  const dough = createFakeDough();
-  const sampleLoads = [];
+  const engine = createFakeAudioEngine();
   const bridge = createAudioBridge({
     runtime,
     registry: createRegistryApi(),
-    dough,
+    engine,
     transport: fixture.transport,
     config: fixture.config,
     getSlots: () => createFixtureSlots(),
-    loadSamples: async (slots) => {
-      sampleLoads.push(slots);
-    },
     logger: { warn() {} },
   });
 
   bridge.start();
   await flushAsyncWork();
-  await dough.emitClock(fixture.clock);
+  await engine.emitClock(fixture.clock);
 
   assert.deepEqual(runtime.queries, [[1, 1.75]]);
-  assert.equal(sampleLoads.length, 1);
-  assert.equal(dough.calls.length, 1);
-  assert.deepEqual(dough.calls[0], {
+  assert.equal(engine.slotSyncCalls.length, 1);
+  assert.equal(engine.calls.length, 1);
+  assert.deepEqual(engine.calls[0], {
     time: 1.5,
     dough: "play",
     s: "2",
@@ -53,18 +49,14 @@ test("audio bridge queries the runtime from the current clock boundary and sched
 test("updateSlots reloads the Dough sample mapping without changing runtime semantics", async () => {
   const fixture = await loadAudioFixture("valid-min.json");
   const runtime = createAudioRuntimeStub(fixture.events);
-  const dough = createFakeDough();
-  const sampleLoads = [];
+  const engine = createFakeAudioEngine();
   const bridge = createAudioBridge({
     runtime,
     registry: createRegistryApi(),
-    dough,
+    engine,
     transport: fixture.transport,
     config: fixture.config,
     getSlots: () => createFixtureSlots(),
-    loadSamples: async (slots) => {
-      sampleLoads.push(slots.map((slot) => ({ ...slot })));
-    },
     logger: { warn() {} },
   });
 
@@ -77,52 +69,138 @@ test("updateSlots reloads the Dough sample mapping without changing runtime sema
   );
   await flushAsyncWork();
 
-  assert.equal(sampleLoads.length, 2);
-  assert.equal(sampleLoads[1][1].path, "/kits/alt/snare.wav");
+  assert.equal(engine.slotSyncCalls.length, 2);
+  assert.equal(engine.slotSyncCalls[1][1].path, "/kits/alt/snare.wav");
 });
 
 test("audio bridge waits for sample mappings to load before scheduling clock windows", async () => {
   const fixture = await loadAudioFixture("valid-min.json");
   const runtime = createAudioRuntimeStub(fixture.events);
-  const dough = createFakeDough();
   let resolveLoadSamples;
   const loadSamplesPromise = new Promise((resolve) => {
     resolveLoadSamples = resolve;
   });
+  const waitingEngine = createFakeAudioEngine({
+    syncSlots: async () => loadSamplesPromise,
+  });
   const bridge = createAudioBridge({
     runtime,
     registry: createRegistryApi(),
-    dough,
+    engine: waitingEngine,
     transport: fixture.transport,
     config: fixture.config,
     getSlots: () => createFixtureSlots(),
-    loadSamples: async () => loadSamplesPromise,
     logger: { warn() {} },
   });
 
   bridge.start();
   await flushAsyncWork();
 
-  const clockPromise = dough.emitClock(fixture.clock);
+  const clockPromise = waitingEngine.emitClock(fixture.clock);
   await flushAsyncWork();
 
   assert.deepEqual(runtime.queries, []);
-  assert.equal(dough.calls.length, 0);
+  assert.equal(waitingEngine.calls.length, 0);
 
   resolveLoadSamples();
   await clockPromise;
 
   assert.deepEqual(runtime.queries, [[1, 1.75]]);
-  assert.equal(dough.calls.length, 1);
+  assert.equal(waitingEngine.calls.length, 1);
+});
+
+test("audio bridge schedules future playback against refreshed slot bindings after a slot change", async () => {
+  const runtime = createAudioRuntimeStub(
+    [
+      { tick: 1, value: 2 },
+      { tick: 2, value: 2 },
+    ],
+    { repeat: true },
+  );
+  let slotRevision = 0;
+  let currentSoundRef = "slot-2@rev-1";
+  let releaseSecondSync;
+  const secondSync = new Promise((resolve) => {
+    releaseSecondSync = resolve;
+  });
+  const engine = createFakeAudioEngine({
+    async syncSlots(slots) {
+      slotRevision += 1;
+      currentSoundRef = `slot-2@rev-${slotRevision}`;
+
+      if (slotRevision === 2) {
+        await secondSync;
+      }
+
+      return slots;
+    },
+    createPlaybackEvent({ runtimeEvent, transport, slots, emitWarning }) {
+      return createDoughPlaybackEvent({
+        runtimeEvent,
+        transport,
+        paramContext: createAudioParamContext(createRegistryApi()),
+        slots: slots.map((slot) =>
+          slot.id === "2" ? { ...slot, id: currentSoundRef } : { ...slot },
+        ),
+        emitWarning,
+      });
+    },
+  });
+  const bridge = createAudioBridge({
+    runtime,
+    registry: createRegistryApi(),
+    engine,
+    transport: {
+      bpm: 60,
+      ticksPerBeat: 1,
+      originSec: 0,
+    },
+    config: {
+      lookaheadSec: 0,
+      horizonSec: 1.5,
+    },
+    getSlots: () => createFixtureSlots(),
+    logger: { warn() {} },
+  });
+
+  bridge.start();
+  await flushAsyncWork();
+  await engine.emitClock({
+    t0: 0,
+    t1: 0,
+    latency: 0.05,
+  });
+
+  assert.equal(engine.calls[0]?.s, "slot-2@rev-1");
+
+  bridge.updateSlots(
+    createFixtureSlots({
+      "2": { path: "/kits/alt/snare.wav" },
+    }),
+  );
+  const pendingClock = engine.emitClock({
+    t0: 1,
+    t1: 1,
+    latency: 0.05,
+  });
+  await flushAsyncWork();
+
+  assert.equal(engine.calls.length, 1);
+
+  releaseSecondSync();
+  await pendingClock;
+
+  assert.equal(engine.calls.length, 2);
+  assert.equal(engine.calls[1].s, "slot-2@rev-2");
 });
 
 test("audio bridge does not skip the first output event sitting inside the lookahead band", async () => {
   const runtime = createRuntime(await loadRuntimeFixture("valid-min.json"));
-  const dough = createFakeDough();
+  const engine = createFakeAudioEngine();
   const bridge = createAudioBridge({
     runtime,
     registry: createRegistryApi(),
-    dough,
+    engine,
     transport: {
       bpm: 60,
       ticksPerBeat: 1,
@@ -133,19 +211,18 @@ test("audio bridge does not skip the first output event sitting inside the looka
       horizonSec: 0.1,
     },
     getSlots: () => createFixtureSlots(),
-    loadSamples: async () => {},
     logger: { warn() {} },
   });
 
   bridge.start();
   await flushAsyncWork();
-  await dough.emitClock({
+  await engine.emitClock({
     t0: 0.2,
     t1: 0.45,
     latency: 0.05,
   });
 
-  assert.deepEqual(dough.calls, [
+  assert.deepEqual(engine.calls, [
     {
       time: 0.5,
       dough: "play",
@@ -162,11 +239,11 @@ test("audio bridge does not skip the first output event sitting inside the looka
 
 test("audio bridge composes onto the real runtime output contract", async () => {
   const runtime = createRuntime(await loadRuntimeFixture("valid-min.json"));
-  const dough = createFakeDough();
+  const engine = createFakeAudioEngine();
   const bridge = createAudioBridge({
     runtime,
     registry: createRegistryApi(),
-    dough,
+    engine,
     transport: {
       bpm: 60,
       ticksPerBeat: 1,
@@ -177,21 +254,20 @@ test("audio bridge composes onto the real runtime output contract", async () => 
       horizonSec: 2,
     },
     getSlots: () => createFixtureSlots(),
-    loadSamples: async () => {},
     logger: { warn() {} },
   });
 
   bridge.start();
   await flushAsyncWork();
-  await dough.emitClock({
+  await engine.emitClock({
     t0: 0,
     t1: 0,
     latency: 0.05,
   });
 
-  assert.equal(dough.calls.length, 2);
+  assert.equal(engine.calls.length, 2);
   assert.deepEqual(
-    dough.calls.map((call) => [call.time, call.s]),
+    engine.calls.map((call) => [call.time, call.s]),
     [
       [0.5, "1"],
       [1.5, "1"],

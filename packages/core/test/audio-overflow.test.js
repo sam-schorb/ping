@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { AUDIO_WARNING_CODES, createAudioBridge } from "../src/index.js";
 import {
   createAudioRuntimeStub,
-  createFakeDough,
+  createFakeAudioEngine,
   createFixtureSlots,
   createRegistryApi,
   flushAsyncWork,
@@ -18,7 +18,7 @@ test("bridge caps submissions before Dough overflow limits and aggregates AUDIO_
     { tick: 2, value: 3 },
     { tick: 2.5, value: 4 },
   ]);
-  const dough = createFakeDough({
+  const engine = createFakeAudioEngine({
     MAX_EVENTS: 3,
     MAX_VOICES: 2,
   });
@@ -26,7 +26,7 @@ test("bridge caps submissions before Dough overflow limits and aggregates AUDIO_
   const bridge = createAudioBridge({
     runtime,
     registry: createRegistryApi(),
-    dough,
+    engine,
     transport: {
       bpm: 60,
       ticksPerBeat: 1,
@@ -37,20 +37,19 @@ test("bridge caps submissions before Dough overflow limits and aggregates AUDIO_
       horizonSec: 4,
     },
     getSlots: () => createFixtureSlots(),
-    loadSamples: async () => {},
     onWarning: (warning) => warnings.push(warning),
     logger: { warn() {} },
   });
 
   bridge.start();
   await flushAsyncWork();
-  await dough.emitClock({
+  await engine.emitClock({
     t0: 0,
     t1: 0,
     latency: 0.05,
   });
 
-  assert.equal(dough.calls.length, 2);
+  assert.equal(engine.calls.length, 2);
   assert.deepEqual(bridge.getMetrics(), {
     scheduled: 2,
     droppedLate: 0,
@@ -67,15 +66,15 @@ test("bridge caps submissions before Dough overflow limits and aggregates AUDIO_
 });
 
 test("oversize Dough payloads are dropped as overflow before evaluate runs", async () => {
-  const dough = createFakeDough({
-    encodeEvent() {
-      return new Uint8Array(2048);
+  const engine = createFakeAudioEngine({
+    measureEventSize() {
+      return 2048;
     },
   });
   const bridge = createAudioBridge({
     runtime: createAudioRuntimeStub([{ tick: 1, value: 1 }]),
     registry: createRegistryApi(),
-    dough,
+    engine,
     transport: {
       bpm: 60,
       ticksPerBeat: 1,
@@ -86,19 +85,18 @@ test("oversize Dough payloads are dropped as overflow before evaluate runs", asy
       horizonSec: 2,
     },
     getSlots: () => createFixtureSlots(),
-    loadSamples: async () => {},
     logger: { warn() {} },
   });
 
   bridge.start();
   await flushAsyncWork();
-  await dough.emitClock({
+  await engine.emitClock({
     t0: 0,
     t1: 0,
     latency: 0.05,
   });
 
-  assert.equal(dough.calls.length, 0);
+  assert.equal(engine.calls.length, 0);
   assert.equal(bridge.getMetrics().droppedOverflow, 1);
 });
 
@@ -107,25 +105,24 @@ test("late audio events are dropped with AUDIO_LATE_EVENT warnings", async () =>
   const runtime = createAudioRuntimeStub(fixture.events, {
     respectWindow: false,
   });
-  const dough = createFakeDough();
+  const engine = createFakeAudioEngine();
   const warnings = [];
   const bridge = createAudioBridge({
     runtime,
     registry: createRegistryApi(),
-    dough,
+    engine,
     transport: fixture.transport,
     config: fixture.config,
     getSlots: () => createFixtureSlots(),
-    loadSamples: async () => {},
     onWarning: (warning) => warnings.push(warning),
     logger: { warn() {} },
   });
 
   bridge.start();
   await flushAsyncWork();
-  await dough.emitClock(fixture.clock);
+  await engine.emitClock(fixture.clock);
 
-  assert.equal(dough.calls.length, 0);
+  assert.equal(engine.calls.length, 0);
   assert.equal(bridge.getMetrics().droppedLate, 1);
   assert.deepEqual(warnings, [
     {
@@ -137,14 +134,14 @@ test("late audio events are dropped with AUDIO_LATE_EVENT warnings", async () =>
 });
 
 test("Dough evaluate failures surface AUDIO_DOH_EVAL_FAIL warnings", async () => {
-  const dough = createFakeDough({
-    evaluateError: new Error("worklet not ready"),
+  const engine = createFakeAudioEngine({
+    scheduleError: new Error("worklet not ready"),
   });
   const warnings = [];
   const bridge = createAudioBridge({
     runtime: createAudioRuntimeStub([{ tick: 1, value: 1 }]),
     registry: createRegistryApi(),
-    dough,
+    engine,
     transport: {
       bpm: 60,
       ticksPerBeat: 1,
@@ -155,20 +152,19 @@ test("Dough evaluate failures surface AUDIO_DOH_EVAL_FAIL warnings", async () =>
       horizonSec: 2,
     },
     getSlots: () => createFixtureSlots(),
-    loadSamples: async () => {},
     onWarning: (warning) => warnings.push(warning),
     logger: { warn() {} },
   });
 
   bridge.start();
   await flushAsyncWork();
-  await dough.emitClock({
+  await engine.emitClock({
     t0: 0,
     t1: 0,
     latency: 0.05,
   });
 
-  assert.equal(dough.calls.length, 1);
+  assert.equal(engine.calls.length, 1);
   assert.equal(bridge.getMetrics().scheduled, 0);
   assert.deepEqual(warnings, [
     {

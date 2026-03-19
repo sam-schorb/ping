@@ -1,4 +1,5 @@
 import {
+  AUDIO_EVENT_MAX_BYTES,
   AUDIO_MIN_RESYNC_GAP_SEC,
   AUDIO_RESYNC_EPSILON_SEC,
   DEFAULT_AUDIO_CONFIG,
@@ -9,8 +10,6 @@ import { AUDIO_WARNING_CODES, createAudioWarning } from "./errors.js";
 import {
   compareRuntimeOutputEvents,
   createAudioParamContext,
-  createDoughPlaybackEvent,
-  isOversizeDoughEvent,
   normalizeTransport,
   resolveAudioBatchCap,
   secondsToTick,
@@ -84,8 +83,6 @@ function shouldResyncClock(previousT1, clockWindow, config) {
   return gap < -AUDIO_RESYNC_EPSILON_SEC || gap > maxExpectedGap;
 }
 
-async function defaultLoadSamples() {}
-
 function groupEventsByTick(events) {
   const groups = [];
 
@@ -109,10 +106,9 @@ function groupEventsByTick(events) {
 export function createAudioBridge(opts) {
   const runtime = opts.runtime;
   const registry = opts.registry;
-  const dough = opts.dough;
+  const engine = opts.engine;
   const logger = opts.logger ?? console;
   const onWarning = typeof opts.onWarning === "function" ? opts.onWarning : null;
-  const loadSamples = typeof opts.loadSamples === "function" ? opts.loadSamples : defaultLoadSamples;
   const paramContext = createAudioParamContext(registry);
 
   let transport = normalizeTransport(opts.transport);
@@ -122,7 +118,7 @@ export function createAudioBridge(opts) {
   let started = false;
   let clockAttached = false;
   let attachPromise = null;
-  let previousClockHandler = null;
+  let detachClockListener = null;
   let lastClockT1 = Number.NaN;
   let sampleLoadPromise = Promise.resolve();
 
@@ -148,7 +144,7 @@ export function createAudioBridge(opts) {
   async function reloadSamples() {
     sampleLoadPromise = (async () => {
       try {
-        await loadSamples(slots);
+        await engine.syncSlots(slots);
       } catch (error) {
         publishWarnings([
           createAudioWarning(
@@ -196,7 +192,7 @@ export function createAudioBridge(opts) {
     const runtimeEvents = runtime
       .queryWindow(tStartTick, tEndTick)
       .sort(compareRuntimeOutputEvents);
-    const batchCap = resolveAudioBatchCap(dough);
+    const batchCap = resolveAudioBatchCap(engine);
     let scheduledThisWindow = 0;
 
     for (const group of groupEventsByTick(runtimeEvents)) {
@@ -205,7 +201,7 @@ export function createAudioBridge(opts) {
       }
 
       for (const runtimeEvent of group.events) {
-        const doughEvent = createDoughPlaybackEvent({
+        const doughEvent = engine.createPlaybackEvent({
           runtimeEvent,
           transport,
           slots,
@@ -228,7 +224,10 @@ export function createAudioBridge(opts) {
           continue;
         }
 
-        if (scheduledThisWindow >= batchCap || isOversizeDoughEvent(dough, doughEvent)) {
+        if (
+          scheduledThisWindow >= batchCap ||
+          engine.measureEventSize(doughEvent) > AUDIO_EVENT_MAX_BYTES
+        ) {
           metrics.droppedOverflow += 1;
           warningBucket.warn(
             AUDIO_WARNING_CODES.DROPPED_OVERFLOW,
@@ -238,7 +237,7 @@ export function createAudioBridge(opts) {
         }
 
         try {
-          await dough.evaluate(doughEvent);
+          await engine.schedule(doughEvent);
           scheduledThisWindow += 1;
           metrics.scheduled += 1;
         } catch (error) {
@@ -262,41 +261,22 @@ export function createAudioBridge(opts) {
 
     attachPromise = (async () => {
       try {
-        await Promise.resolve(dough.ready);
+        detachClockListener = await engine.attachClockListener(handleClockWindow);
       } catch (error) {
         publishWarnings([
           createAudioWarning(
             AUDIO_WARNING_CODES.DOH_EVAL_FAIL,
-            `Dough failed to become ready: ${error?.message ?? "unknown error"}.`,
+            `Audio engine failed to become ready: ${error?.message ?? "unknown error"}.`,
           ),
         ]);
         return;
       }
 
       if (!started) {
+        detachClockListener?.();
+        detachClockListener = null;
         return;
       }
-
-      const port = dough.worklet?.port;
-
-      if (!port) {
-        publishWarnings([
-          createAudioWarning(
-            AUDIO_WARNING_CODES.DOH_EVAL_FAIL,
-            "Dough worklet is not ready for clock-driven scheduling.",
-          ),
-        ]);
-        return;
-      }
-
-      previousClockHandler = port.onmessage;
-      port.onmessage = async (event) => {
-        if (typeof previousClockHandler === "function") {
-          await previousClockHandler(event);
-        }
-
-        await handleClockWindow(event?.data);
-      };
       clockAttached = true;
     })();
 
@@ -321,12 +301,8 @@ export function createAudioBridge(opts) {
     stop() {
       started = false;
       lastClockT1 = Number.NaN;
-
-      if (clockAttached && dough.worklet?.port) {
-        dough.worklet.port.onmessage = previousClockHandler;
-      }
-
-      previousClockHandler = null;
+      detachClockListener?.();
+      detachClockListener = null;
       clockAttached = false;
     },
     updateTransport(nextTransport) {
@@ -340,7 +316,10 @@ export function createAudioBridge(opts) {
     },
     updateSlots(nextSlots) {
       slots = normalizeAudioSlots(nextSlots ?? opts.getSlots?.());
-      void reloadSamples();
+
+      if (started) {
+        void reloadSamples();
+      }
     },
     updateConfig(nextConfig) {
       config = normalizeAudioConfig(nextConfig);

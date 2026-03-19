@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createAudioBridge, secondsToTick, tickToSeconds } from "../src/index.js";
 import {
   createAudioRuntimeStub,
-  createFakeDough,
+  createFakeAudioEngine,
   createFixtureSlots,
   createRegistryApi,
   flushAsyncWork,
@@ -26,11 +26,11 @@ test("transport updates apply at the next window boundary without retiming alrea
     { tick: 2, value: 1 },
     { tick: 8, value: 2 },
   ]);
-  const dough = createFakeDough();
+  const engine = createFakeAudioEngine();
   const bridge = createAudioBridge({
     runtime,
     registry: createRegistryApi(),
-    dough,
+    engine,
     transport: {
       bpm: 60,
       ticksPerBeat: 1,
@@ -41,13 +41,12 @@ test("transport updates apply at the next window boundary without retiming alrea
       horizonSec: 3,
     },
     getSlots: () => createFixtureSlots(),
-    loadSamples: async () => {},
     logger: { warn() {} },
   });
 
   bridge.start();
   await flushAsyncWork();
-  await dough.emitClock({
+  await engine.emitClock({
     t0: 0,
     t1: 0,
     latency: 0.05,
@@ -58,14 +57,14 @@ test("transport updates apply at the next window boundary without retiming alrea
     ticksPerBeat: 1,
     originSec: 0,
   });
-  await dough.emitClock({
+  await engine.emitClock({
     t0: 3,
     t1: 3,
     latency: 0.05,
   });
 
   assert.deepEqual(
-    dough.calls.map((call) => call.time),
+    engine.calls.map((call) => call.time),
     [2, 4],
   );
   assert.deepEqual(bridge.getMetrics(), {

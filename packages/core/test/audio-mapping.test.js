@@ -9,7 +9,7 @@ import {
 } from "../src/index.js";
 import {
   createAudioRuntimeStub,
-  createFakeDough,
+  createFakeAudioEngine,
   createFixtureSlots,
   createRegistryApi,
   flushAsyncWork,
@@ -19,23 +19,22 @@ import {
 test("runtime output params map to canonical Dough event keys and slot selection", async () => {
   const fixture = await loadAudioFixture("valid-params.json");
   const runtime = createAudioRuntimeStub(fixture.events);
-  const dough = createFakeDough();
+  const engine = createFakeAudioEngine();
   const bridge = createAudioBridge({
     runtime,
     registry: createRegistryApi(),
-    dough,
+    engine,
     transport: fixture.transport,
     config: fixture.config,
     getSlots: () => fixture.slots,
-    loadSamples: async () => {},
     logger: { warn() {} },
   });
 
   bridge.start();
   await flushAsyncWork();
-  await dough.emitClock(fixture.clock);
+  await engine.emitClock(fixture.clock);
 
-  assert.deepEqual(dough.calls[0], {
+  assert.deepEqual(engine.calls[0], {
     time: 2,
     dough: "play",
     s: "8",
@@ -46,7 +45,7 @@ test("runtime output params map to canonical Dough event keys and slot selection
     hpf: 200,
     lpf: 200,
   });
-  assert.equal("duration" in dough.calls[0], false);
+  assert.equal("duration" in engine.calls[0], false);
 });
 
 test("omitted params are filled from registry defaults before Dough mapping", () => {
@@ -79,28 +78,63 @@ test("omitted params are filled from registry defaults before Dough mapping", ()
   });
 });
 
+test("slot target resolvers can decouple UI slot ids from engine-facing sound ids", () => {
+  const registry = createRegistryApi();
+  const paramContext = createAudioParamContext(registry);
+  const doughEvent = createDoughPlaybackEvent({
+    runtimeEvent: {
+      tick: 1,
+      value: 3,
+    },
+    transport: {
+      bpm: 60,
+      ticksPerBeat: 1,
+      originSec: 0,
+    },
+    slots: createFixtureSlots(),
+    paramContext,
+    resolveSampleTarget(slot) {
+      return {
+        sound: `${slot.id}@rev-2`,
+        index: 0,
+      };
+    },
+  });
+
+  assert.deepEqual(doughEvent, {
+    time: 1,
+    dough: "play",
+    s: "3@rev-2",
+    n: 0,
+    speed: 1,
+    end: 1,
+    crush: 16,
+    hpf: 100,
+    lpf: 12000,
+  });
+});
+
 test("missing slots emit AUDIO_MISSING_SAMPLE and drop the event", async () => {
   const fixture = await loadAudioFixture("invalid-missing-slot.json");
   const runtime = createAudioRuntimeStub(fixture.events);
-  const dough = createFakeDough();
+  const engine = createFakeAudioEngine();
   const warnings = [];
   const bridge = createAudioBridge({
     runtime,
     registry: createRegistryApi(),
-    dough,
+    engine,
     transport: fixture.transport,
     config: fixture.config,
     getSlots: () => fixture.slots,
-    loadSamples: async () => {},
     onWarning: (warning) => warnings.push(warning),
     logger: { warn() {} },
   });
 
   bridge.start();
   await flushAsyncWork();
-  await dough.emitClock(fixture.clock);
+  await engine.emitClock(fixture.clock);
 
-  assert.equal(dough.calls.length, 0);
+  assert.equal(engine.calls.length, 0);
   assert.deepEqual(warnings, [
     {
       code: AUDIO_WARNING_CODES.MISSING_SAMPLE,
