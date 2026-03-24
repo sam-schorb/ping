@@ -55,6 +55,7 @@ function createGroupMeta(groupMeta) {
         groupId,
         {
           nodeIds: [...meta.nodeIds],
+          edgeIds: [...(meta.edgeIds ?? [])],
           externalInputs: meta.externalInputs.map((entry) => ({ ...entry })),
           externalOutputs: meta.externalOutputs.map((entry) => ({ ...entry })),
           controls: meta.controls.map((entry) => ({ ...entry })),
@@ -72,6 +73,24 @@ function createDebugMaps(debug) {
   return {
     nodeIdToSourceId: new Map(debug.nodeIdToSourceId ?? []),
     edgeIdToSourceId: new Map(debug.edgeIdToSourceId ?? []),
+  };
+}
+
+function createPresentationMaps(presentation) {
+  if (!presentation) {
+    return undefined;
+  }
+
+  return {
+    visibleNodeIdByCompiledNodeId: new Map(
+      presentation.visibleNodeIdByCompiledNodeId ?? [],
+    ),
+    visibleEdgeIdByCompiledEdgeId: new Map(
+      presentation.visibleEdgeIdByCompiledEdgeId ?? [],
+    ),
+    collapsedOwnerNodeIdByCompiledEdgeId: new Map(
+      presentation.collapsedOwnerNodeIdByCompiledEdgeId ?? [],
+    ),
   };
 }
 
@@ -96,6 +115,9 @@ export function createCompiledGraph(data) {
     nodeIndex: new Map(nodes.map((node, index) => [node.id, index])),
     edgeIndex: new Map(edges.map((edge, index) => [edge.id, index])),
     ...(createGroupMeta(data.groupMeta) ? { groupMeta: createGroupMeta(data.groupMeta) } : {}),
+    ...(createPresentationMaps(data.presentation)
+      ? { presentation: createPresentationMaps(data.presentation) }
+      : {}),
     ...(createDebugMaps(data.debug) ? { debug: createDebugMaps(data.debug) } : {}),
   };
 }

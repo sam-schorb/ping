@@ -66,7 +66,7 @@ test("group nodes derive anchors from their exposed custom layout and rotation",
         },
         inputs: [{ nodeId: "inner-pulse", portSlot: 0 }],
         outputs: [{ nodeId: "inner-pulse", portSlot: 0 }, { nodeId: "inner-pulse", portSlot: 0 }],
-        controls: [{ nodeId: "inner-pulse", paramKey: "param" }],
+        controls: [{ nodeId: "inner-pulse", controlSlot: 0 }],
       },
     },
   };

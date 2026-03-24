@@ -1,5 +1,6 @@
 import { createRoutingCache } from "./cache.js";
 import { routeGraph } from "./route-graph.js";
+import { createGroupDelaySourceId } from "../build/delay-sources.js";
 
 export function createProjectRoutingCache() {
   return {
@@ -60,11 +61,24 @@ export function routeProjectGraph(snapshot, registry, config, changedEdges, cach
       projectCache.groupsById.set(groupId, groupCache);
     }
 
-    const groupResult = routeGraph(groupDefinition.graph, registry, config, null, groupCache);
+    const groupResult = routeGraph(
+      {
+        nodes: groupDefinition.graph.nodes,
+        edges: groupDefinition.graph.edges,
+        groups,
+      },
+      registry,
+      config,
+      null,
+      groupCache,
+    );
     const preserveInternalCableDelays = groupDefinition.preserveInternalCableDelays === true;
 
     for (const [edgeId, delay] of groupResult.edgeDelays.entries()) {
-      edgeDelays.set(edgeId, preserveInternalCableDelays ? delay : 0);
+      edgeDelays.set(
+        createGroupDelaySourceId(groupId, edgeId),
+        preserveInternalCableDelays ? delay : 0,
+      );
     }
 
     if (groupResult.errors?.length) {

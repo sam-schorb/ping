@@ -1,4 +1,11 @@
-import { buildGraphIndexes, cloneGraphSnapshot } from "@ping/core";
+import {
+  analyzeGroupDependencies,
+  buildGraphIndexes,
+  cloneGraphSnapshot,
+  collectReferencedGroupClosure,
+  isGroupBackedNodeType,
+  rewriteGroupReferences,
+} from "@ping/core";
 
 import { getResolvedNodeDefinition } from "./geometry.js";
 
@@ -318,23 +325,14 @@ function getNodeSetBounds(nodes) {
 }
 
 function collectReferencedGroups(snapshot, nodes) {
-  const groups = {};
-
-  for (const node of nodes) {
-    if (node.type !== "group" || typeof node.groupRef !== "string") {
-      continue;
-    }
-
-    const group = snapshot.groups?.[node.groupRef];
-
-    if (!group || groups[node.groupRef]) {
-      continue;
-    }
-
-    groups[node.groupRef] = cloneGroupRecord(group);
-  }
-
-  return groups;
+  return (
+    collectReferencedGroupClosure(
+      snapshot.groups,
+      nodes
+        .filter((node) => isGroupBackedNodeType(node.type) && typeof node.groupRef === "string")
+        .map((node) => node.groupRef),
+    ) ?? {}
+  );
 }
 
 function areGroupsEquivalent(left, right) {
@@ -408,7 +406,7 @@ export function instantiateClipboardSubgraph({
 
   const groups = payload.groups ?? {};
   const groupIdMap = new Map();
-  const groupOps = [];
+  const importedGroupIds = new Set();
 
   for (const [groupId, group] of Object.entries(groups)) {
     if (!group || typeof group !== "object") {
@@ -425,26 +423,27 @@ export function instantiateClipboardSubgraph({
 
       const nextGroupId = createId("group");
       groupIdMap.set(groupId, nextGroupId);
-      groupOps.push({
-        type: "addGroup",
-        payload: {
-          group: {
-            ...cloneGroupRecord(group),
-            id: nextGroupId,
-          },
-        },
-      });
+      importedGroupIds.add(nextGroupId);
       continue;
     }
 
     groupIdMap.set(groupId, groupId);
-    groupOps.push({
-      type: "addGroup",
-      payload: {
-        group: cloneGroupRecord(group),
-      },
-    });
+    importedGroupIds.add(groupId);
   }
+
+  const remappedGroups = rewriteGroupReferences(groups, groupIdMap) ?? {};
+  const dependencyAnalysis = analyzeGroupDependencies(remappedGroups);
+  const orderedGroupIds = dependencyAnalysis.ok
+    ? dependencyAnalysis.order
+    : Object.keys(remappedGroups);
+  const groupOps = orderedGroupIds
+    .filter((groupId) => importedGroupIds.has(groupId))
+    .map((groupId) => ({
+    type: "addGroup",
+    payload: {
+      group: cloneGroupRecord(remappedGroups[groupId]),
+    },
+    }));
 
   const nodeIdMap = new Map();
   const edgeIdMap = new Map();
@@ -529,16 +528,87 @@ function getNodeOutputCount(snapshot, node, registry) {
   return getResolvedNodeDefinition(snapshot, node, registry).outputs;
 }
 
-function getControlCandidateKey(nodeId, paramKey = "param") {
-  return `${nodeId}:${paramKey}`;
+function getControlCandidateKey(nodeId, targetPortSlot) {
+  return `${nodeId}:${targetPortSlot}`;
+}
+
+function createInternalPortKey(nodeId, portSlot) {
+  return `${nodeId}:${portSlot}`;
 }
 
 function createGroupMappingId(kind, entry) {
   if (kind === "controls") {
-    return `control:${entry.nodeId}:${entry.paramKey ?? "param"}`;
+    return `control:${entry.nodeId}:slot:${entry.controlSlot}`;
   }
 
   return `${kind.slice(0, -1)}:${entry.nodeId}:${entry.portSlot}`;
+}
+
+function createControlCandidateLabel(label, definition, controlSlot) {
+  if (definition.hasParam && (definition.controlPorts ?? 0) === 1 && controlSlot === 0) {
+    return `${label} param`;
+  }
+
+  return `${label} control ${controlSlot + 1}`;
+}
+
+function buildControlCandidateEntries(snapshot, node, definition) {
+  const label = createNodeLabel(node, definition);
+
+  if (isGroupBackedNodeType(node.type) && typeof node.groupRef === "string") {
+    const groupDefinition = snapshot.groups?.[node.groupRef];
+    const signalInputs = definition.inputs ?? 0;
+
+    return (groupDefinition?.controls ?? []).map((mapping, controlSlot) => ({
+      id: createGroupMappingId("controls", { nodeId: node.id, controlSlot }),
+      label: mapping.label ? `${label} ${mapping.label}` : `${label} control ${controlSlot + 1}`,
+      nodeId: node.id,
+      controlSlot,
+      targetPortSlot: signalInputs + controlSlot,
+    }));
+  }
+
+  if ((definition.controlPorts ?? 0) > 0) {
+    return Array.from({ length: definition.controlPorts }, (_, controlSlot) => ({
+      id: createGroupMappingId("controls", { nodeId: node.id, controlSlot }),
+      label: createControlCandidateLabel(label, definition, controlSlot),
+      nodeId: node.id,
+      controlSlot,
+      targetPortSlot: (definition.inputs ?? 0) + controlSlot,
+    }));
+  }
+
+  return [];
+}
+
+function classifyControlCandidates(snapshot, node, definition, internalControlEdgeByKey) {
+  const available = [];
+  const unavailable = [];
+
+  for (const entry of buildControlCandidateEntries(snapshot, node, definition)) {
+    const targetKey = getControlCandidateKey(entry.nodeId, entry.targetPortSlot);
+    const blockingEdge = internalControlEdgeByKey.get(targetKey);
+
+    if (blockingEdge) {
+      unavailable.push({
+        ...entry,
+        unavailableReason: "already driven internally",
+        displaceInternalEdgeId: blockingEdge.id,
+        restoreBucket: "unavailable",
+      });
+      continue;
+    }
+
+    available.push({
+      ...entry,
+      restoreBucket: "available",
+    });
+  }
+
+  return {
+    available,
+    unavailable,
+  };
 }
 
 export function buildGroupCandidates(snapshot, groupSelection, registry) {
@@ -566,10 +636,16 @@ export function buildGroupCandidates(snapshot, groupSelection, registry) {
   const internalOutputKeys = new Set(
     internalOnlyEdges.map((edge) => `${edge.from.nodeId}:${edge.from.portSlot}`),
   );
+  const internalControlEdgeByKey = new Map(
+    internalOnlyEdges.map((edge) => [createInternalPortKey(edge.to.nodeId, edge.to.portSlot), edge]),
+  );
 
   const inputs = [];
   const outputs = [];
   const controls = [];
+  const unavailable = {
+    controls: [],
+  };
   const seenControls = new Set();
 
   for (const node of effectiveNodes) {
@@ -601,17 +677,24 @@ export function buildGroupCandidates(snapshot, groupSelection, registry) {
       }
     }
 
-    if (definition.hasParam) {
-      const controlKey = getControlCandidateKey(node.id);
+    const controlCandidates = classifyControlCandidates(
+      snapshot,
+      node,
+      definition,
+      internalControlEdgeByKey,
+    );
 
-      if (!seenControls.has(controlKey)) {
-        seenControls.add(controlKey);
-        controls.push({
-          id: createGroupMappingId("controls", { nodeId: node.id, paramKey: "param" }),
-          label: `${createNodeLabel(node, definition)} param`,
-          nodeId: node.id,
-          paramKey: "param",
-        });
+    for (const entry of controlCandidates.available) {
+      if (!seenControls.has(entry.id)) {
+        seenControls.add(entry.id);
+        controls.push(entry);
+      }
+    }
+
+    for (const entry of controlCandidates.unavailable) {
+      if (!seenControls.has(entry.id)) {
+        seenControls.add(entry.id);
+        unavailable.controls.push(entry);
       }
     }
   }
@@ -623,6 +706,7 @@ export function buildGroupCandidates(snapshot, groupSelection, registry) {
     inputs,
     outputs,
     controls,
+    unavailable,
   };
 }
 
@@ -651,10 +735,15 @@ export function buildCreateGroupOps({
   const inputs = mappings?.inputs?.length ? mappings.inputs : candidates.inputs;
   const outputs = mappings?.outputs?.length ? mappings.outputs : candidates.outputs;
   const controls = mappings?.controls?.length ? mappings.controls : candidates.controls;
+  const displacedInternalEdgeIds = new Set(
+    controls
+      .map((entry) => entry.displaceInternalEdgeId)
+      .filter((edgeId) => typeof edgeId === "string" && edgeId.length > 0),
+  );
   const inputLookup = new Map(inputs.map((entry, index) => [`${entry.nodeId}:${entry.portSlot}`, index]));
   const outputLookup = new Map(outputs.map((entry, index) => [`${entry.nodeId}:${entry.portSlot}`, index]));
   const controlLookup = new Map(
-    controls.map((entry, index) => [getControlCandidateKey(entry.nodeId, entry.paramKey), index]),
+    controls.map((entry, index) => [getControlCandidateKey(entry.nodeId, entry.targetPortSlot), index]),
   );
   const bbox = candidates.nodes.reduce(
     (acc, node) => ({
@@ -694,7 +783,9 @@ export function buildCreateGroupOps({
     preserveInternalCableDelays,
     graph: {
       nodes: candidates.nodes.map((node) => cloneValue(node)),
-      edges: candidates.edges.map((edge) => cloneValue(edge)),
+      edges: candidates.edges
+        .filter((edge) => !displacedInternalEdgeIds.has(edge.id))
+        .map((edge) => cloneValue(edge)),
     },
     inputs: inputs.map((entry) => ({
       label: entry.label,
@@ -709,7 +800,7 @@ export function buildCreateGroupOps({
     controls: controls.map((entry) => ({
       label: entry.label,
       nodeId: entry.nodeId,
-      paramKey: entry.paramKey ?? "param",
+      controlSlot: entry.controlSlot,
     })),
   };
 
@@ -733,7 +824,7 @@ export function buildCreateGroupOps({
         continue;
       }
 
-      const controlSlot = controlLookup.get(getControlCandidateKey(edge.to.nodeId));
+      const controlSlot = controlLookup.get(getControlCandidateKey(edge.to.nodeId, edge.to.portSlot));
 
       if (controlSlot !== undefined) {
         rewiredEdges.push({
@@ -816,7 +907,19 @@ export function buildUpdateGroupOps({
       preserveInternalCableDelays !== undefined
         ? preserveInternalCableDelays
         : existingGroup.preserveInternalCableDelays === true,
-    graph: cloneValue(existingGroup.graph),
+    graph: {
+      nodes: cloneValue(existingGroup.graph.nodes),
+      edges: cloneValue(existingGroup.graph.edges).filter(
+        (edge) =>
+          !(
+            mappings?.controls?.some(
+              (entry) =>
+                typeof entry.displaceInternalEdgeId === "string" &&
+                entry.displaceInternalEdgeId === edge.id,
+            ) ?? false
+          ),
+      ),
+    },
     inputs: (mappings?.inputs ?? existingGroup.inputs).map((entry) => ({
       ...(entry.label !== undefined ? { label: entry.label } : {}),
       nodeId: entry.nodeId,
@@ -830,7 +933,7 @@ export function buildUpdateGroupOps({
     controls: (mappings?.controls ?? existingGroup.controls).map((entry) => ({
       ...(entry.label !== undefined ? { label: entry.label } : {}),
       nodeId: entry.nodeId,
-      paramKey: entry.paramKey ?? "param",
+      controlSlot: entry.controlSlot,
     })),
   };
 
@@ -846,7 +949,7 @@ export function buildUpdateGroupOps({
   };
   const instanceIds = new Set(
     snapshot.nodes
-      .filter((node) => node.type === "group" && node.groupRef === groupId)
+      .filter((node) => isGroupBackedNodeType(node.type) && node.groupRef === groupId)
       .map((node) => node.id),
   );
   const controlEdgeUpdates = [];
@@ -935,5 +1038,7 @@ export function buildUpdateGroupOps({
 }
 
 export function canRemoveGroup(snapshot, groupId) {
-  return !snapshot.nodes.some((node) => node.type === "group" && node.groupRef === groupId);
+  return !snapshot.nodes.some(
+    (node) => isGroupBackedNodeType(node.type) && node.groupRef === groupId,
+  );
 }

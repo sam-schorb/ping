@@ -16,6 +16,7 @@ import {
 } from "./events.js";
 import { createRuntimeMetrics, resetRuntimeMetrics, snapshotRuntimeMetrics } from "./metrics.js";
 import { applyGraphPatch, cloneCompiledGraph } from "./patching.js";
+import { projectNodePulseState, projectRuntimeActivity, projectThumbState } from "./presentation.js";
 import { createRingBufferScheduler, SchedulerOverflowError } from "./scheduler/index.js";
 
 function isPlainObject(value) {
@@ -55,6 +56,34 @@ function getPulseStepUnits(node) {
   return PULSE_SOURCE_PHASE_UNITS / getPulseRate(node);
 }
 
+function createCompiledOutputPortId(nodeId, portSlot) {
+  return `${nodeId}:out:${portSlot}`;
+}
+
+function collectPulseState(nowTick, durationTicks, pulseTicksByNodeId) {
+  if (!Number.isFinite(nowTick) || !Number.isFinite(durationTicks) || durationTicks <= 0) {
+    return [];
+  }
+
+  const pulses = [];
+
+  for (const [nodeId, receivedTick] of pulseTicksByNodeId.entries()) {
+    const progress = (nowTick - receivedTick) / durationTicks;
+
+    if (!Number.isFinite(progress) || progress < 0 || progress > 1) {
+      continue;
+    }
+
+    pulses.push({
+      nodeId,
+      progress,
+      receivedTick,
+    });
+  }
+
+  return pulses.sort((left, right) => left.nodeId.localeCompare(right.nodeId));
+}
+
 export class Runtime {
   constructor(opts) {
     this.registry = opts.registry;
@@ -78,6 +107,11 @@ export class Runtime {
     this.activeEventKeysByNodeId = new Map();
     this.activeEventKeysByEdgeId = new Map();
     this.nodePulseTicksByNodeId = new Map();
+    this.presentedNodePulseTicksByNodeId = new Map();
+    this.visibleNodeIds = new Set();
+    this.visibleEdgeIdByCompiledEdgeId = new Map();
+    this.collapsedOutputOwnerNodeIdByCompiledPortId = new Map();
+    this.collapsedSinkOwnerNodeIdByCompiledNodeId = new Map();
   }
 
   setGraph(graph) {
@@ -166,17 +200,21 @@ export class Runtime {
     }
 
     const { removedNodes, removedEdges, updatedEdges } = applyGraphPatch(this.graph, patch);
+    const preservedActiveEdgeIds = new Set(patch.preservedActiveEdges ?? []);
 
     for (const nodeId of removedNodes) {
       this.scheduler.removeByNode(nodeId);
       this.dropActiveEventsForNode(nodeId);
       this.nodeRngById.delete(nodeId);
       this.nodePulseTicksByNodeId.delete(nodeId);
+      this.presentedNodePulseTicksByNodeId.delete(nodeId);
     }
 
     for (const edgeId of removedEdges) {
-      this.scheduler.removeByEdge(edgeId);
-      this.dropActiveEventsForEdge(edgeId);
+      if (!preservedActiveEdgeIds.has(edgeId)) {
+        this.scheduler.removeByEdge(edgeId);
+        this.dropActiveEventsForEdge(edgeId);
+      }
     }
 
     this.refreshGraphState();
@@ -250,27 +288,29 @@ export class Runtime {
   }
 
   getNodePulseState(nowTick, durationTicks) {
-    if (!Number.isFinite(nowTick) || !Number.isFinite(durationTicks) || durationTicks <= 0) {
-      return [];
-    }
+    return collectPulseState(nowTick, durationTicks, this.nodePulseTicksByNodeId);
+  }
 
-    const pulses = [];
+  getPresentedNodePulseState(nowTick, durationTicks) {
+    return collectPulseState(nowTick, durationTicks, this.presentedNodePulseTicksByNodeId);
+  }
 
-    for (const [nodeId, receivedTick] of this.nodePulseTicksByNodeId.entries()) {
-      const progress = (nowTick - receivedTick) / durationTicks;
+  getProjectedNodePulseState(nowTick, durationTicks) {
+    return projectNodePulseState(
+      this.graph,
+      this.getNodePulseState(nowTick, durationTicks),
+    );
+  }
 
-      if (!Number.isFinite(progress) || progress < 0 || progress > 1) {
-        continue;
-      }
+  getProjectedThumbState(nowTick) {
+    return projectThumbState(this.graph, this.getThumbState(nowTick));
+  }
 
-      pulses.push({
-        nodeId,
-        progress,
-        receivedTick,
-      });
-    }
-
-    return pulses.sort((left, right) => left.nodeId.localeCompare(right.nodeId));
+  getPresentedActivity(nowTick, durationTicks) {
+    return projectRuntimeActivity(this.graph, {
+      thumbs: this.getThumbState(nowTick),
+      nodePulseStates: this.getPresentedNodePulseState(nowTick, durationTicks),
+    });
   }
 
   clearSchedulerState() {
@@ -286,12 +326,21 @@ export class Runtime {
     this.activeEventKeysByNodeId.clear();
     this.activeEventKeysByEdgeId.clear();
     this.nodePulseTicksByNodeId.clear();
+    this.presentedNodePulseTicksByNodeId.clear();
   }
 
   refreshGraphState() {
     this.nodeById = new Map(this.graph.nodes.map((node) => [node.id, node]));
     this.edgeById = new Map(this.graph.edges.map((edge) => [edge.id, edge]));
     this.outgoingEdgesByNodePort = new Map();
+    this.visibleNodeIds = new Set(this.graph.nodes.map((node) => node.id));
+    this.visibleEdgeIdByCompiledEdgeId = new Map(
+      this.graph.presentation?.visibleEdgeIdByCompiledEdgeId instanceof Map
+        ? this.graph.presentation.visibleEdgeIdByCompiledEdgeId
+        : [],
+    );
+    this.collapsedOutputOwnerNodeIdByCompiledPortId = new Map();
+    this.collapsedSinkOwnerNodeIdByCompiledNodeId = new Map();
 
     for (const edge of this.graph.edges) {
       const key = `${edge.from.nodeId}:${edge.from.portSlot}`;
@@ -303,6 +352,50 @@ export class Runtime {
     for (const node of this.graph.nodes) {
       if (!this.nodeRngById.has(node.id)) {
         this.nodeRngById.set(node.id, createNodeRng(hashNodeSeed(this.rngSeed, node.id)));
+      }
+    }
+
+    const groupsById = this.graph.groupMeta?.groupsById;
+
+    if (groupsById instanceof Map) {
+      for (const [visibleNodeId, meta] of groupsById.entries()) {
+        for (const compiledNodeId of meta?.nodeIds ?? []) {
+          this.visibleNodeIds.delete(compiledNodeId);
+        }
+
+        this.visibleNodeIds.add(visibleNodeId);
+
+        if ((meta?.externalOutputs?.length ?? 0) > 0) {
+          for (const mapping of meta.externalOutputs) {
+            this.collapsedOutputOwnerNodeIdByCompiledPortId.set(
+              createCompiledOutputPortId(mapping.nodeId, mapping.portSlot),
+              visibleNodeId,
+            );
+          }
+          continue;
+        }
+
+        for (const compiledNodeId of meta?.nodeIds ?? []) {
+          const node = this.nodeById.get(compiledNodeId);
+
+          if (this.getNodeVisualPulseMode(node) !== "consume") {
+            continue;
+          }
+
+          this.collapsedSinkOwnerNodeIdByCompiledNodeId.set(compiledNodeId, visibleNodeId);
+        }
+      }
+    }
+
+    for (const nodeId of Array.from(this.nodePulseTicksByNodeId.keys())) {
+      if (!this.nodeById.has(nodeId)) {
+        this.nodePulseTicksByNodeId.delete(nodeId);
+      }
+    }
+
+    for (const nodeId of Array.from(this.presentedNodePulseTicksByNodeId.keys())) {
+      if (!this.visibleNodeIds.has(nodeId)) {
+        this.presentedNodePulseTicksByNodeId.delete(nodeId);
       }
     }
   }
@@ -477,6 +570,26 @@ export class Runtime {
 
   pushWarning(warning) {
     this.warnings.push(warning);
+  }
+
+  getNodeVisualPulseMode(node) {
+    if (!node) {
+      return "emit";
+    }
+
+    if (node.visualPulseMode === "consume") {
+      return "consume";
+    }
+
+    return node.outputs === 0 ? "consume" : "emit";
+  }
+
+  recordPresentedNodePulse(nodeId, tick) {
+    if (!this.visibleNodeIds.has(nodeId)) {
+      return;
+    }
+
+    this.presentedNodePulseTicksByNodeId.set(nodeId, tick);
   }
 
   enqueueEvent(event) {
@@ -776,11 +889,6 @@ export class Runtime {
       return;
     }
 
-    if (targetPortSlot >= node.inputs + node.controlPorts) {
-      node.param = clampDiscreteNodeValue(event.value);
-      return;
-    }
-
     if (typeof definition.onControl !== "function") {
       node.param = clampDiscreteNodeValue(event.value);
       return;
@@ -809,6 +917,16 @@ export class Runtime {
 
     this.nodePulseTicksByNodeId.set(node.id, event.tick);
 
+    if (this.getNodeVisualPulseMode(node) === "consume") {
+      this.recordPresentedNodePulse(node.id, event.tick);
+      const collapsedOwnerNodeId =
+        this.collapsedSinkOwnerNodeIdByCompiledNodeId.get(node.id);
+
+      if (collapsedOwnerNodeId) {
+        this.recordPresentedNodePulse(collapsedOwnerNodeId, event.tick);
+      }
+    }
+
     if (node.type === "out") {
       return [createOutputEvent(event, node.id)];
     }
@@ -823,6 +941,7 @@ export class Runtime {
 
     const outputs = [];
     const emitted = Array.isArray(result.outputs) ? result.outputs : [];
+    let didEmit = false;
 
     for (const rawOutput of emitted) {
       const output = sanitizeNodeOutput(rawOutput, event, this.warnings, {
@@ -834,7 +953,12 @@ export class Runtime {
         continue;
       }
 
+      didEmit = true;
       this.scheduleNodeOutput(node, event, output);
+    }
+
+    if (didEmit && this.getNodeVisualPulseMode(node) === "emit") {
+      this.recordPresentedNodePulse(node.id, event.tick);
     }
 
     if (isInternalPulseEdgeId(event.edgeId) && node.type === "pulse") {
@@ -850,6 +974,17 @@ export class Runtime {
   scheduleNodeOutput(node, sourceEvent, output) {
     const portKey = `${node.id}:${output.outPortIndex}`;
     const outgoingEdges = this.outgoingEdgesByNodePort.get(portKey) ?? [];
+    const collapsedOwnerNodeId =
+      this.collapsedOutputOwnerNodeIdByCompiledPortId.get(
+        createCompiledOutputPortId(node.id, output.outPortIndex),
+      );
+    const hasVisibleExternalEmission =
+      collapsedOwnerNodeId &&
+      outgoingEdges.some((edge) => this.visibleEdgeIdByCompiledEdgeId.has(edge.id));
+
+    if (hasVisibleExternalEmission) {
+      this.recordPresentedNodePulse(collapsedOwnerNodeId, sourceEvent.tick);
+    }
 
     for (const edge of outgoingEdges) {
       const scheduledDelay = Math.max(

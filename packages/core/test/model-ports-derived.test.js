@@ -72,7 +72,7 @@ test("group node ports are derived from the group library, not stored on the nod
         },
         inputs: [{ nodeId: "inner-pulse", portSlot: 0 }],
         outputs: [{ nodeId: "inner-pulse", portSlot: 0 }, { nodeId: "inner-pulse", portSlot: 0 }],
-        controls: [{ nodeId: "inner-pulse", paramKey: "param" }],
+        controls: [{ nodeId: "inner-pulse", controlSlot: 0 }],
       },
     },
   });

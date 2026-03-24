@@ -3,7 +3,7 @@ import {
   createGroupedNodeDefinition,
   getGroupPortCounts,
 } from "../nodes/grouped-node.js";
-import { GROUP_NODE_TYPE, PORT_DIRECTIONS } from "./constants.js";
+import { isGroupBackedNodeType, PORT_DIRECTIONS } from "./constants.js";
 import { MODEL_ERROR_CODES, createModelIssue } from "./errors.js";
 
 export function createPortId(nodeId, direction, slotId) {
@@ -30,11 +30,11 @@ export function resolveNodeDefinitionForModel(
   }
 
   if (node.groupRef !== undefined) {
-    if (node.type !== GROUP_NODE_TYPE) {
+    if (!isGroupBackedNodeType(node.type)) {
       return {
         issue: createModelIssue(
           MODEL_ERROR_CODES.GROUP_REF_INVALID,
-          `Only "${GROUP_NODE_TYPE}" nodes may carry groupRef values.`,
+          "Only group-backed nodes may carry groupRef values.",
           node.id,
         ),
       };
@@ -69,11 +69,11 @@ export function resolveNodeDefinitionForModel(
     }
   }
 
-  if (node.type === GROUP_NODE_TYPE && validateGroupRef && node.groupRef === undefined) {
+  if (isGroupBackedNodeType(node.type) && validateGroupRef && node.groupRef === undefined) {
     return {
       issue: createModelIssue(
         MODEL_ERROR_CODES.GROUP_REF_INVALID,
-        `Group node "${node.id}" must include groupRef.`,
+        `Group-backed node "${node.id}" must include groupRef.`,
         node.id,
       ),
     };
@@ -134,7 +134,7 @@ export function derivePortRecords(node, groups, getNodeDefinition, options) {
 }
 
 export function getNodePortCounts(node, groups, getNodeDefinition, options) {
-  if (node.type === GROUP_NODE_TYPE && node.groupRef && groups?.[node.groupRef]) {
+  if (isGroupBackedNodeType(node.type) && node.groupRef && groups?.[node.groupRef]) {
     return getGroupPortCounts(groups[node.groupRef]);
   }
 

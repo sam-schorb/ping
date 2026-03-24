@@ -18,8 +18,17 @@ const DEFAULT_RUNTIME_API = Object.freeze({
   getThumbState() {
     return [];
   },
+  getProjectedThumbState() {
+    return [];
+  },
   getNodePulseState() {
     return [];
+  },
+  getProjectedNodePulseState() {
+    return [];
+  },
+  getPresentedActivity() {
+    return { thumbs: [], nodePulseStates: [] };
   },
   getMetrics() {
     return { lastTickProcessed: 0 };

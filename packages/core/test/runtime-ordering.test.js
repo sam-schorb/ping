@@ -276,7 +276,7 @@ test("control changes on pulse nodes snap the next pulse to the future rate latt
   );
 });
 
-test("direct grouped param mappings update node.param without invoking onControl", () => {
+test("control edges targeting real control ports invoke onControl handlers", () => {
   const runtime = createRuntime(
     createCompiledGraph({
       nodes: [
@@ -290,21 +290,53 @@ test("direct grouped param mappings update node.param without invoking onControl
           controlPorts: 0,
         },
         {
-          id: "node-counter",
-          type: "counter",
-          param: 3,
-          state: { count: 0 },
+          id: "node-pulse",
+          type: "pulse",
+          param: 1,
+          state: {},
           inputs: 1,
           outputs: 1,
           controlPorts: 1,
         },
+        {
+          id: "node-block",
+          type: "block",
+          param: 1,
+          state: { allow: true },
+          inputs: 1,
+          outputs: 1,
+          controlPorts: 1,
+        },
+        {
+          id: "node-output",
+          type: "out",
+          param: 1,
+          state: {},
+          inputs: 1,
+          outputs: 0,
+          controlPorts: 0,
+        },
       ],
       edges: [
         {
-          id: "edge-direct-param",
+          id: "edge-signal",
+          from: { nodeId: "node-pulse", portSlot: 0 },
+          to: { nodeId: "node-block", portSlot: 0 },
+          role: "signal",
+          delay: 1,
+        },
+        {
+          id: "edge-control",
           from: { nodeId: "node-control", portSlot: 0 },
-          to: { nodeId: "node-counter", portSlot: 2 },
+          to: { nodeId: "node-block", portSlot: 1 },
           role: "control",
+          delay: 0.5,
+        },
+        {
+          id: "edge-out",
+          from: { nodeId: "node-block", portSlot: 0 },
+          to: { nodeId: "node-output", portSlot: 0 },
+          role: "signal",
           delay: 0.5,
         },
       ],
@@ -312,10 +344,10 @@ test("direct grouped param mappings update node.param without invoking onControl
   );
 
   assert.deepEqual(runtime.queryWindow(0, 1), []);
-  assert.equal(runtime.graph.nodes[runtime.graph.nodeIndex.get("node-counter")].param, 7);
+  assert.deepEqual(runtime.queryWindow(1, 2), []);
   assert.deepEqual(
-    runtime.graph.nodes[runtime.graph.nodeIndex.get("node-counter")].state,
-    { count: 0 },
+    runtime.graph.nodes[runtime.graph.nodeIndex.get("node-block")].state,
+    { allow: false },
   );
 });
 

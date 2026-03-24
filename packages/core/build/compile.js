@@ -1,11 +1,11 @@
-import { GROUP_NODE_TYPE, PORT_DIRECTIONS } from "../graph/constants.js";
+import { PORT_DIRECTIONS, isGroupBackedNodeType } from "../graph/constants.js";
 import { buildGroupTemplates, instantiateGroupTemplate } from "./groups.js";
 import { createDebugMaps } from "./debug.js";
 import { BUILD_ERROR_CODES, createBuildIssue } from "./errors.js";
+import { createPresentationMaps } from "./presentation.js";
 import {
   BUILD_EDGE_ROLES,
   createCompiledPortId,
-  getDirectParamPortSlot,
   getInputRole,
   getOutputRole,
   normalizeEditorEdge,
@@ -55,16 +55,6 @@ function createCompiledNode(nodeEntry) {
     inputs: nodeEntry.shape.inputs,
     outputs: nodeEntry.shape.outputs,
     controlPorts: nodeEntry.shape.controlPorts,
-  };
-}
-
-function createExpandedTarget(shape, mapping) {
-  return {
-    nodeId: mapping.nodeId,
-    portSlot:
-      mapping.virtualPortSlot !== undefined
-        ? mapping.virtualPortSlot
-        : mapping.portSlot,
   };
 }
 
@@ -155,15 +145,12 @@ function validateCompiledEdge(flatEdge, nodeEntryById, delays, issues) {
     }
   } else if (flatEdge.role === BUILD_EDGE_ROLES.CONTROL) {
     const inputRole = getInputRole(toNode.shape, flatEdge.to.portSlot);
-    const directParamPortSlot = getDirectParamPortSlot(toNode.shape);
-    const isDirectParamTarget =
-      flatEdge.to.portSlot === directParamPortSlot && toNode.shape.hasParam === true;
 
-    if (inputRole !== BUILD_EDGE_ROLES.CONTROL && !isDirectParamTarget) {
+    if (inputRole !== BUILD_EDGE_ROLES.CONTROL) {
       issues.push(
         createBuildIssue(
           BUILD_ERROR_CODES.ROLE_MISMATCH,
-          `Compiled edge "${flatEdge.id}" must target a control input or a direct mapped param.`,
+          `Compiled edge "${flatEdge.id}" must target a control input port.`,
           {
             edgeId: flatEdge.id,
             nodeId: flatEdge.to.nodeId,
@@ -281,7 +268,7 @@ function resolveFlatTargetEndpoint(endpoint, groupInstances) {
   return {
     endpoint: {
       nodeId: groupInstance.nodeIdMap.get(controlMapping.nodeId),
-      portSlot: controlMapping.virtualPortSlot,
+      portSlot: controlMapping.portSlot,
     },
     role: BUILD_EDGE_ROLES.CONTROL,
   };
@@ -312,7 +299,7 @@ export function compileGraph(snapshot, registry, delays, options = {}) {
       continue;
     }
 
-    if (node.type !== GROUP_NODE_TYPE) {
+    if (!isGroupBackedNodeType(node.type)) {
       flatNodes.push({
         id: node.id,
         sourceId: node.id,
@@ -344,7 +331,7 @@ export function compileGraph(snapshot, registry, delays, options = {}) {
   const flatEdges = [];
 
   for (const node of snapshot.nodes) {
-    if (node.type !== GROUP_NODE_TYPE) {
+    if (!isGroupBackedNodeType(node.type)) {
       continue;
     }
 
@@ -473,6 +460,9 @@ export function compileGraph(snapshot, registry, delays, options = {}) {
     nodeIndex: new Map(compiledNodes.map((node, index) => [node.id, index])),
     edgeIndex: new Map(compiledEdges.map((edge, index) => [edge.id, index])),
     ...(groupsById.size > 0 ? { groupMeta: { groupsById } } : {}),
+    ...(options.includePresentationMaps !== false
+      ? { presentation: createPresentationMaps(snapshot, flatNodes, validatedEdges, groupsById) }
+      : {}),
     ...(options.includeDebugMaps !== false
       ? { debug: createDebugMaps(flatNodes, validatedEdges) }
       : {}),

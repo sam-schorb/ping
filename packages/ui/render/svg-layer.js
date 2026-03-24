@@ -1,4 +1,4 @@
-import { routeEdge } from "@ping/core";
+import { isGroupBackedNodeType, routeEdge } from "@ping/core";
 
 import { resolveIcon } from "../icons/library.js";
 import {
@@ -60,14 +60,26 @@ function getGroupPortTargetLabel(group, mapping, kind, registry) {
   const nodeLabel = getGroupInternalNodeLabel(group, mapping.nodeId, registry);
 
   if (kind === "controls") {
-    return `${nodeLabel} ${mapping.paramKey ?? "param"}`;
+    const internalNode = group?.graph?.nodes?.find((entry) => entry.id === mapping.nodeId);
+    const definition = internalNode ? registry.getNodeDefinition(internalNode.type) : null;
+
+    if (
+      mapping.controlSlot !== undefined &&
+      definition?.hasParam &&
+      (definition.controlPorts ?? 0) === 1 &&
+      mapping.controlSlot === 0
+    ) {
+      return `${nodeLabel} param`;
+    }
+
+    return `${nodeLabel} control ${(mapping.controlSlot ?? 0) + 1}`;
   }
 
   return `${nodeLabel} ${kind === "inputs" ? "input" : "output"} ${mapping.portSlot + 1}`;
 }
 
 function getGroupPortTooltip(snapshot, node, registry, label, direction, portSlot, port) {
-  if (node.type !== "group" || typeof node.groupRef !== "string") {
+  if (!isGroupBackedNodeType(node.type) || typeof node.groupRef !== "string") {
     return null;
   }
 
@@ -131,7 +143,7 @@ function getPortColor(config, direction, port) {
 }
 
 function getNodeTooltipText(node, definition, label) {
-  if (node.type === "group") {
+  if (isGroupBackedNodeType(node.type)) {
     return label;
   }
 
@@ -143,11 +155,36 @@ function clampValue(value, min, max) {
 }
 
 const NODE_PULSE_SCALE_DELTA = 0.04;
+const NODE_PULSE_REFERENCE_WORLD_SIZE = 3;
 
-function getNodePulseScale(progress, cameraScale) {
+function getNodePulseScale(progress, cameraScale, screenBox, config) {
   const zoomScale = Number.isFinite(cameraScale) && cameraScale > 0 ? cameraScale : 1;
   const pulseDelta = clampValue(NODE_PULSE_SCALE_DELTA * zoomScale ** -0.18, 0.03, 0.05);
-  return 1 + pulseDelta * Math.sin(Math.PI * clampValue(progress, 0, 1));
+  const baseScale = 1 + pulseDelta * Math.sin(Math.PI * clampValue(progress, 0, 1));
+
+  if (!screenBox || !config?.grid?.GRID_PX) {
+    return baseScale;
+  }
+
+  const maxDimensionPx = Math.max(
+    Number.isFinite(screenBox.width) ? screenBox.width : 0,
+    Number.isFinite(screenBox.height) ? screenBox.height : 0,
+  );
+  const referenceDimensionPx =
+    NODE_PULSE_REFERENCE_WORLD_SIZE * config.grid.GRID_PX * zoomScale;
+
+  if (
+    !Number.isFinite(maxDimensionPx) ||
+    maxDimensionPx <= 0 ||
+    !Number.isFinite(referenceDimensionPx) ||
+    referenceDimensionPx <= 0 ||
+    maxDimensionPx <= referenceDimensionPx
+  ) {
+    return baseScale;
+  }
+
+  const extraScale = baseScale - 1;
+  return 1 + extraScale * (referenceDimensionPx / maxDimensionPx);
 }
 
 function createScaleTransform(centerX, centerY, scale) {
@@ -389,7 +426,25 @@ function collectPreviewNodeIds(previewState) {
   return previewNodeIds;
 }
 
-export function createHiddenThumbEdgeIds(snapshot, previewState) {
+function createDisplayEdgeRoutes(routes, previewEdgeRoutes) {
+  if (!(previewEdgeRoutes instanceof Map) || previewEdgeRoutes.size === 0) {
+    return routes;
+  }
+
+  return {
+    ...routes,
+    edgeRoutes: new Map([
+      ...(routes?.edgeRoutes?.entries?.() ?? []),
+      ...previewEdgeRoutes.entries(),
+    ]),
+  };
+}
+
+export function createHiddenThumbEdgeIds(snapshot, previewState, previewEdgeRoutes = null) {
+  if (previewEdgeRoutes instanceof Map) {
+    return new Set(previewEdgeRoutes.keys());
+  }
+
   const previewNodeIds = collectPreviewNodeIds(previewState);
 
   if (previewNodeIds.size === 0) {
@@ -505,6 +560,31 @@ export function createPreviewEdgeRoutes(snapshot, previewSnapshot, routes, regis
   }
 
   return previewEdgeRoutes;
+}
+
+export function createPreviewRenderState(snapshot, routes, registry, previewState, config) {
+  const previewSnapshot = createPreviewSnapshot(snapshot, previewState);
+  const previewNodeIds = collectPreviewNodeIds(previewState);
+  const previewEdgeRoutes = createPreviewEdgeRoutes(
+    snapshot,
+    previewSnapshot,
+    routes,
+    registry,
+    previewState,
+    config,
+  );
+
+  return {
+    previewSnapshot,
+    previewNodeIds,
+    previewEdgeRoutes,
+    displayRoutes: createDisplayEdgeRoutes(routes, previewEdgeRoutes),
+    hiddenThumbEdgeIds: createHiddenThumbEdgeIds(
+      snapshot,
+      previewState,
+      previewEdgeRoutes,
+    ),
+  };
 }
 
 function renderEdge(edge, route, routes, camera, config, hover, selection, zoomMetrics) {
@@ -633,7 +713,10 @@ function renderNode(
   );
   const showSelectionRing = isSelected || isGroupSelected;
   const pulseProgress = nodePulseState ? clampValue(nodePulseState.progress, 0, 1) : null;
-  const pulseScale = pulseProgress === null ? 1 : getNodePulseScale(pulseProgress, camera?.scale);
+  const pulseScale =
+    pulseProgress === null
+      ? 1
+      : getNodePulseScale(pulseProgress, camera?.scale, screenBox, config);
   const bodyTransform = createScaleTransform(
     screenBox.x + screenBox.width / 2,
     screenBox.y + screenBox.height / 2,
@@ -912,19 +995,18 @@ export function renderSvgMarkup({
   nodePulseStates,
   previewRoute,
   boxSelection,
+  previewRenderState = null,
 }) {
   const previewState = { drag, nodePositionOverrides };
-  const previewSnapshot = createPreviewSnapshot(snapshot, previewState);
-  const previewNodeIds = collectPreviewNodeIds(previewState);
-  const previewEdgeRoutes = createPreviewEdgeRoutes(
-    snapshot,
-    previewSnapshot,
-    routes,
-    registry,
-    previewState,
-    config,
-  );
-  const hiddenThumbEdgeIds = createHiddenThumbEdgeIds(snapshot, previewState);
+  const effectivePreviewRenderState =
+    previewRenderState ??
+    createPreviewRenderState(snapshot, routes, registry, previewState, config);
+  const {
+    previewNodeIds,
+    previewEdgeRoutes,
+    hiddenThumbEdgeIds,
+    displayRoutes,
+  } = effectivePreviewRenderState;
   const zoomMetrics = createZoomMetrics(camera, config);
   const nodePulseStateByNodeId = new Map(
     (nodePulseStates ?? []).map((entry) => [entry.nodeId, entry]),
@@ -990,15 +1072,7 @@ export function renderSvgMarkup({
       </g>
       <g class="ping-editor__thumb-layer" pointer-events="none">
         ${renderThumbs(
-          previewEdgeRoutes.size > 0
-            ? {
-                ...routes,
-                edgeRoutes: new Map([
-                  ...(routes?.edgeRoutes?.entries?.() ?? []),
-                  ...previewEdgeRoutes.entries(),
-                ]),
-              }
-            : routes,
+          displayRoutes,
           camera,
           config,
           thumbs,

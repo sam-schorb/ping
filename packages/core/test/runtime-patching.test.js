@@ -304,6 +304,100 @@ test("createCompiledGraphPatch captures incremental node and edge changes", () =
   });
 });
 
+test("createCompiledGraphPatch re-adds an edge when the previous endpoint node was removed but the edge id is reused", () => {
+  const previousGraph = createCompiledGraph({
+    nodes: [
+      {
+        id: "group-node::node::pulse",
+        type: "pulse",
+        param: 2,
+        state: {},
+        inputs: 1,
+        outputs: 1,
+        controlPorts: 1,
+      },
+      {
+        id: "group-node::node::out",
+        type: "out",
+        param: 1,
+        state: {},
+        inputs: 1,
+        outputs: 0,
+        controlPorts: 0,
+      },
+    ],
+    edges: [
+      {
+        id: "group-node::edge::inner",
+        from: { nodeId: "group-node::node::pulse", portSlot: 0 },
+        to: { nodeId: "group-node::node::out", portSlot: 0 },
+        role: "signal",
+        delay: 0,
+      },
+    ],
+  });
+  const nextGraph = createCompiledGraph({
+    nodes: [
+      {
+        id: "group-node::node::pulse",
+        type: "pulse",
+        param: 2,
+        state: {},
+        inputs: 1,
+        outputs: 1,
+        controlPorts: 1,
+      },
+      {
+        id: "group-node::node::every",
+        type: "every",
+        param: 2,
+        state: { count: 1 },
+        inputs: 1,
+        outputs: 1,
+        controlPorts: 1,
+      },
+    ],
+    edges: [
+      {
+        id: "group-node::edge::inner",
+        from: { nodeId: "group-node::node::pulse", portSlot: 0 },
+        to: { nodeId: "group-node::node::every", portSlot: 0 },
+        role: "signal",
+        delay: 0,
+      },
+    ],
+  });
+
+  assert.deepEqual(createCompiledGraphPatch(previousGraph, nextGraph), {
+    removedNodes: ["group-node::node::out"],
+    removedEdges: ["group-node::edge::inner"],
+    addedNodes: [
+      {
+        id: "group-node::node::every",
+        type: "every",
+        param: 2,
+        state: { count: 1 },
+        inputs: 1,
+        outputs: 1,
+        controlPorts: 1,
+      },
+    ],
+    addedEdges: [
+      {
+        id: "group-node::edge::inner",
+        from: { nodeId: "group-node::node::pulse", portSlot: 0 },
+        to: { nodeId: "group-node::node::every", portSlot: 0 },
+        role: "signal",
+        delay: 0,
+      },
+    ],
+    updatedEdges: [],
+    updatedParams: [],
+    nodeOrder: ["group-node::node::pulse", "group-node::node::every"],
+    edgeOrder: ["group-node::edge::inner"],
+  });
+});
+
 test("updated edge delays reschedule pending events outside the protected window", () => {
   const runtime = createRuntime(createPulseToOutputGraph(3));
 
@@ -322,6 +416,132 @@ test("updated edge delays reschedule pending events outside the protected window
       edgeId: "edge-a",
     },
   ]);
+});
+
+test("applyPatch preserves outlet-emission pulses for ordinary grouped nodes after replacing an internal sink with an outlet path", () => {
+  const previousGraph = createCompiledGraph({
+    nodes: [
+      {
+        id: "group-node::node::pulse",
+        type: "pulse",
+        param: 2,
+        state: {},
+        inputs: 1,
+        outputs: 1,
+        controlPorts: 1,
+      },
+      {
+        id: "group-node::node::out",
+        type: "out",
+        param: 1,
+        state: {},
+        inputs: 1,
+        outputs: 0,
+        controlPorts: 0,
+      },
+    ],
+    edges: [
+      {
+        id: "group-node::edge::inner",
+        from: { nodeId: "group-node::node::pulse", portSlot: 0 },
+        to: { nodeId: "group-node::node::out", portSlot: 0 },
+        role: "signal",
+        delay: 0,
+      },
+    ],
+    groupMeta: {
+      groupsById: [
+        [
+          "group-node",
+          {
+            nodeIds: ["group-node::node::pulse", "group-node::node::out"],
+            edgeIds: ["group-node::edge::inner"],
+            externalInputs: [],
+            externalOutputs: [],
+            controls: [],
+          },
+        ],
+      ],
+    },
+    presentation: {
+      visibleNodeIdByCompiledNodeId: [
+        ["group-node::node::pulse", "group-node"],
+        ["group-node::node::out", "group-node"],
+      ],
+      visibleEdgeIdByCompiledEdgeId: [],
+      collapsedOwnerNodeIdByCompiledEdgeId: [["group-node::edge::inner", "group-node"]],
+    },
+  });
+  const nextGraph = createCompiledGraph({
+    nodes: [
+      {
+        id: "group-node::node::pulse",
+        type: "pulse",
+        param: 2,
+        state: {},
+        inputs: 1,
+        outputs: 1,
+        controlPorts: 1,
+      },
+      {
+        id: "group-node::node::every",
+        type: "every",
+        param: 2,
+        state: { count: 1 },
+        inputs: 1,
+        outputs: 1,
+        controlPorts: 1,
+      },
+    ],
+    edges: [
+      {
+        id: "group-node::edge::inner",
+        from: { nodeId: "group-node::node::pulse", portSlot: 0 },
+        to: { nodeId: "group-node::node::every", portSlot: 0 },
+        role: "signal",
+        delay: 0,
+      },
+    ],
+    groupMeta: {
+      groupsById: [
+        [
+          "group-node",
+          {
+            nodeIds: ["group-node::node::pulse", "group-node::node::every"],
+            edgeIds: ["group-node::edge::inner"],
+            externalInputs: [],
+            externalOutputs: [
+              {
+                groupPortSlot: 0,
+                nodeId: "group-node::node::every",
+                portSlot: 0,
+              },
+            ],
+            controls: [],
+          },
+        ],
+      ],
+    },
+    presentation: {
+      visibleNodeIdByCompiledNodeId: [
+        ["group-node::node::pulse", "group-node"],
+        ["group-node::node::every", "group-node"],
+      ],
+      visibleEdgeIdByCompiledEdgeId: [],
+      collapsedOwnerNodeIdByCompiledEdgeId: [["group-node::edge::inner", "group-node"]],
+    },
+  });
+
+  const runtime = createRuntime(previousGraph);
+
+  runtime.applyPatch(createCompiledGraphPatch(previousGraph, nextGraph));
+  runtime.queryWindow(0, 1);
+
+  assert.deepEqual(runtime.getPresentedActivity(1, 1), {
+    thumbs: [],
+    nodePulseStates: [],
+    collapsedEdgeActivityOwners: [],
+  });
 });
 
 test("updated params affect already-scheduled events when they are processed", () => {

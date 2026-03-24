@@ -1,6 +1,6 @@
 import { getPortSideSlot } from "../nodes/archetypes.js";
 import { getGroupPortCounts } from "../nodes/grouped-node.js";
-import { GROUP_NODE_TYPE } from "../graph/constants.js";
+import { isGroupBackedNodeType } from "../graph/constants.js";
 import { DEFAULT_ROUTING_CONFIG, ROTATION_VECTORS, SIDE_NORMALS } from "./constants.js";
 import { ROUTING_ERROR_CODES, createRoutingError } from "./errors.js";
 
@@ -31,7 +31,7 @@ function resolveNodeLayoutInfo(node, snapshot, registry, edgeId) {
   }
 
   const counts =
-    node.type === GROUP_NODE_TYPE && node.groupRef && snapshot.groups?.[node.groupRef]
+    isGroupBackedNodeType(node.type) && node.groupRef && snapshot.groups?.[node.groupRef]
       ? getGroupPortCounts(snapshot.groups[node.groupRef])
       : {
           inputs: definition.inputs,

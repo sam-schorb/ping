@@ -1,3 +1,5 @@
+import { isCodeNodeGroupId, isGroupBackedNodeType } from "@ping/core";
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -8,8 +10,11 @@ function escapeHtml(value) {
 
 export function renderGroupsPanel({ groups, snapshot }) {
   const groupItems = Object.values(groups ?? {})
+    .filter((group) => !isCodeNodeGroupId(group?.id))
     .map((group) => {
-      const inUse = snapshot.nodes.some((node) => node.type === "group" && node.groupRef === group.id);
+      const inUse = snapshot.nodes.some(
+        (node) => isGroupBackedNodeType(node.type) && node.groupRef === group.id,
+      );
       return `
         <div class="ping-editor__group-item" data-testid="group-library-${escapeHtml(group.id)}">
           <div>

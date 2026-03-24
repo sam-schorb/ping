@@ -49,7 +49,7 @@
           { "label": "out", "nodeId": "inner-pulse", "portSlot": 0 }
         ],
         "controls": [
-          { "label": "amount", "nodeId": "inner-pulse", "paramKey": "param" }
+          { "label": "amount", "nodeId": "inner-pulse", "controlSlot": 0 }
         ]
       }
     }

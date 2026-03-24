@@ -39,9 +39,11 @@ test("buildPalette returns a stable visible palette order with required UI field
     "gtep",
     "ltep",
     "match",
+    "code",
   ]);
 
   assert.equal(palette.some((item) => item.type === "group"), false);
+  assert.equal(palette.some((item) => item.type === "code"), true);
 
   for (const item of palette) {
     assert.equal(typeof item.label, "string");

@@ -1,5 +1,14 @@
-import { ROTATION_SET } from "./constants.js";
+import {
+  CODE_NODE_TYPE,
+  DEFAULT_PARAM_KEY,
+  ROTATION_SET,
+  createCodeNodeGroupId,
+  isGroupBackedNodeType,
+} from "./constants.js";
 import { MODEL_ERROR_CODES, createModelIssue } from "./errors.js";
+import { analyzeGroupDependencies } from "./grouping.js";
+import { buildGraphIndexes } from "./indexes.js";
+import { resolveNodeDefinitionForModel } from "./ports.js";
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -85,6 +94,7 @@ export function cloneGraphSnapshot(snapshot) {
           inputs: group.inputs.map((mapping) => ({ ...mapping })),
           outputs: group.outputs.map((mapping) => ({ ...mapping })),
           controls: group.controls.map((mapping) => ({ ...mapping })),
+          ...(group.dsl ? { dsl: { ...group.dsl } } : {}),
         },
       ]),
     );
@@ -102,6 +112,95 @@ export function cloneGraphSnapshot(snapshot) {
       manualCorners: edge.manualCorners.map((point) => ({ ...point })),
     })),
     ...(groups && Object.keys(groups).length > 0 ? { groups } : {}),
+  };
+}
+
+function normalizeGroupDslMetadata(rawDsl, groupId) {
+  if (rawDsl === undefined) {
+    return { dsl: undefined };
+  }
+
+  if (!isPlainObject(rawDsl)) {
+    return {
+      issue: createModelIssue(
+        MODEL_ERROR_CODES.INVALID_OPERATION,
+        `Group "${groupId}" dsl metadata must be an object when provided.`,
+        groupId,
+      ),
+    };
+  }
+
+  if (typeof rawDsl.source !== "string") {
+    return {
+      issue: createModelIssue(
+        MODEL_ERROR_CODES.INVALID_OPERATION,
+        `Group "${groupId}" dsl.source must be a string.`,
+        groupId,
+      ),
+    };
+  }
+
+  const formatVersion =
+    rawDsl.formatVersion === undefined ? 1 : rawDsl.formatVersion;
+
+  if (!Number.isInteger(formatVersion) || formatVersion < 1) {
+    return {
+      issue: createModelIssue(
+        MODEL_ERROR_CODES.INVALID_OPERATION,
+        `Group "${groupId}" dsl.formatVersion must be an integer >= 1.`,
+        groupId,
+      ),
+    };
+  }
+
+  const mode = rawDsl.mode === undefined ? "generated" : rawDsl.mode;
+
+  if (mode !== "authored" && mode !== "generated") {
+    return {
+      issue: createModelIssue(
+        MODEL_ERROR_CODES.INVALID_OPERATION,
+        `Group "${groupId}" dsl.mode must be "authored" or "generated".`,
+        groupId,
+      ),
+    };
+  }
+
+  const syncStatus =
+    rawDsl.syncStatus === undefined ? "in-sync" : rawDsl.syncStatus;
+
+  if (syncStatus !== "in-sync" && syncStatus !== "stale") {
+    return {
+      issue: createModelIssue(
+        MODEL_ERROR_CODES.INVALID_OPERATION,
+        `Group "${groupId}" dsl.syncStatus must be "in-sync" or "stale".`,
+        groupId,
+      ),
+    };
+  }
+
+  const lastAppliedSemanticHash =
+    rawDsl.lastAppliedSemanticHash === undefined
+      ? ""
+      : rawDsl.lastAppliedSemanticHash;
+
+  if (typeof lastAppliedSemanticHash !== "string") {
+    return {
+      issue: createModelIssue(
+        MODEL_ERROR_CODES.INVALID_OPERATION,
+        `Group "${groupId}" dsl.lastAppliedSemanticHash must be a string.`,
+        groupId,
+      ),
+    };
+  }
+
+  return {
+    dsl: {
+      source: rawDsl.source,
+      formatVersion,
+      mode,
+      syncStatus,
+      lastAppliedSemanticHash,
+    },
   };
 }
 
@@ -201,6 +300,16 @@ export function normalizeNodeRecord(
         issue: createModelIssue(
           MODEL_ERROR_CODES.GROUP_REF_INVALID,
           `Node "${rawNode.id}" groupRef must be a non-empty string.`,
+          rawNode.id,
+        ),
+      };
+    }
+
+    if (rawNode.type === CODE_NODE_TYPE && rawNode.groupRef !== createCodeNodeGroupId(rawNode.id)) {
+      return {
+        issue: createModelIssue(
+          MODEL_ERROR_CODES.GROUP_REF_INVALID,
+          `Code node "${rawNode.id}" must reference private backing group "${createCodeNodeGroupId(rawNode.id)}".`,
           rawNode.id,
         ),
       };
@@ -355,8 +464,11 @@ function normalizeGroupMappings(list, type, groupId) {
     }
 
     if (type === "controls") {
+      const hasParamKey = mapping.paramKey !== undefined;
+      const hasControlSlot = mapping.controlSlot !== undefined;
+
       if (
-        mapping.paramKey !== undefined &&
+        hasParamKey &&
         typeof mapping.paramKey !== "string"
       ) {
         return {
@@ -368,10 +480,34 @@ function normalizeGroupMappings(list, type, groupId) {
         };
       }
 
+      if (
+        hasControlSlot &&
+        (!Number.isInteger(mapping.controlSlot) || mapping.controlSlot < 0)
+      ) {
+        return {
+          issue: createModelIssue(
+            MODEL_ERROR_CODES.INVALID_OPERATION,
+            `Group "${groupId}" controls mappings must use integer controlSlot values.`,
+            groupId,
+          ),
+        };
+      }
+
+      if (hasParamKey && hasControlSlot) {
+        return {
+          issue: createModelIssue(
+            MODEL_ERROR_CODES.INVALID_OPERATION,
+            `Group "${groupId}" controls mappings must target either paramKey or controlSlot, not both.`,
+            groupId,
+          ),
+        };
+      }
+
       mappings.push({
         ...(mapping.label !== undefined ? { label: mapping.label } : {}),
         nodeId: mapping.nodeId,
         ...(mapping.paramKey !== undefined ? { paramKey: mapping.paramKey } : {}),
+        ...(mapping.controlSlot !== undefined ? { controlSlot: mapping.controlSlot } : {}),
       });
       continue;
     }
@@ -396,7 +532,144 @@ function normalizeGroupMappings(list, type, groupId) {
   return { mappings };
 }
 
-export function normalizeGroupDefinition(group, getNodeDefinition, options = {}) {
+function canonicalizeGroupControls(controls, graphSnapshot, getNodeDefinition, groups, groupId, options = {}) {
+  const source = options.source ?? "load";
+  const nodeById = new Map(graphSnapshot.nodes.map((node) => [node.id, node]));
+  const connectedInputTargets = new Set(
+    graphSnapshot.edges.map((edge) => `${edge.to.nodeId}:${edge.to.portSlot}`),
+  );
+  const seenControlTargets = new Set();
+  const mappings = [];
+
+  for (const mapping of controls) {
+    const targetNode = nodeById.get(mapping.nodeId);
+
+    if (!targetNode) {
+      return {
+        issue: createModelIssue(
+          MODEL_ERROR_CODES.INVALID_OPERATION,
+          `Group "${groupId}" control mapping references missing node "${mapping.nodeId}".`,
+          groupId,
+        ),
+      };
+    }
+
+    const resolution = resolveNodeDefinitionForModel(
+      targetNode,
+      groups,
+      getNodeDefinition,
+      { validateGroupRef: options.validateGroupRef !== false },
+    );
+
+    if (resolution.issue) {
+      return resolution;
+    }
+
+    if (mapping.paramKey !== undefined) {
+      if (source !== "load") {
+        return {
+          issue: createModelIssue(
+            MODEL_ERROR_CODES.INVALID_OPERATION,
+            `Group "${groupId}" controls mappings must use controlSlot in canonical input paths.`,
+            groupId,
+          ),
+        };
+      }
+
+      if (mapping.paramKey !== DEFAULT_PARAM_KEY) {
+        return {
+          issue: createModelIssue(
+            MODEL_ERROR_CODES.INVALID_OPERATION,
+            `Group "${groupId}" controls mappings only support legacy paramKey "${DEFAULT_PARAM_KEY}" during load.`,
+            groupId,
+          ),
+        };
+      }
+
+      if (isGroupBackedNodeType(targetNode.type)) {
+        return {
+          issue: createModelIssue(
+            MODEL_ERROR_CODES.INVALID_OPERATION,
+            `Group "${groupId}" controls mappings must use controlSlot when targeting group-backed nodes.`,
+            groupId,
+          ),
+        };
+      }
+
+      if (resolution.definition.controlPorts !== 1) {
+        return {
+          issue: createModelIssue(
+            MODEL_ERROR_CODES.INVALID_OPERATION,
+            `Group "${groupId}" cannot infer a canonical controlSlot for legacy paramKey mapping on node "${mapping.nodeId}".`,
+            groupId,
+          ),
+        };
+      }
+
+      mappings.push({
+        ...(mapping.label !== undefined ? { label: mapping.label } : {}),
+        nodeId: mapping.nodeId,
+        controlSlot: 0,
+      });
+      continue;
+    }
+
+    if (mapping.controlSlot === undefined) {
+      return {
+        issue: createModelIssue(
+          MODEL_ERROR_CODES.INVALID_OPERATION,
+          `Group "${groupId}" controls mappings must include controlSlot.`,
+          groupId,
+        ),
+      };
+    }
+
+    if (mapping.controlSlot >= resolution.definition.controlPorts) {
+      return {
+        issue: createModelIssue(
+          MODEL_ERROR_CODES.INVALID_OPERATION,
+          `Group "${groupId}" control mapping targets missing control slot ${mapping.controlSlot} on node "${mapping.nodeId}".`,
+          groupId,
+        ),
+      };
+    }
+
+    const targetPortSlot = resolution.definition.inputs + mapping.controlSlot;
+    const controlTargetKey = `${mapping.nodeId}:${mapping.controlSlot}`;
+
+    if (seenControlTargets.has(controlTargetKey)) {
+      return {
+        issue: createModelIssue(
+          MODEL_ERROR_CODES.PORT_ALREADY_CONNECTED,
+          `Group "${groupId}" control mapping duplicates internal control slot ${mapping.controlSlot} on node "${mapping.nodeId}".`,
+          groupId,
+        ),
+      };
+    }
+
+    if (source !== "load" && connectedInputTargets.has(`${mapping.nodeId}:${targetPortSlot}`)) {
+      return {
+        issue: createModelIssue(
+          MODEL_ERROR_CODES.PORT_ALREADY_CONNECTED,
+          `Group "${groupId}" control mapping targets internal control slot ${mapping.controlSlot} on node "${mapping.nodeId}", but that input is already connected inside the group.`,
+          groupId,
+        ),
+      };
+    }
+
+    seenControlTargets.add(controlTargetKey);
+
+    mappings.push({
+      ...(mapping.label !== undefined ? { label: mapping.label } : {}),
+      nodeId: mapping.nodeId,
+      controlSlot: mapping.controlSlot,
+    });
+  }
+
+  return { mappings };
+}
+
+function normalizeGroupShell(group) {
   if (!isPlainObject(group)) {
     return {
       issue: createModelIssue(
@@ -423,16 +696,6 @@ export function normalizeGroupDefinition(group, getNodeDefinition, options = {})
         group.id,
       ),
     };
-  }
-
-  const normalizedGraph = normalizeGraphSnapshot(group.graph, getNodeDefinition, {
-    source: "load",
-    allowGroups: false,
-    validateGroupRef: false,
-  });
-
-  if (normalizedGraph.issue) {
-    return normalizedGraph;
   }
 
   const inputs = normalizeGroupMappings(group.inputs, "inputs", group.id);
@@ -468,15 +731,94 @@ export function normalizeGroupDefinition(group, getNodeDefinition, options = {})
     };
   }
 
+  const normalizedDsl = normalizeGroupDslMetadata(group.dsl, group.id);
+
+  if (normalizedDsl.issue) {
+    return normalizedDsl;
+  }
+
   return {
     group: {
       id: group.id,
       name: group.name,
       preserveInternalCableDelays,
-      graph: normalizedGraph.snapshot,
       inputs: inputs.mappings,
       outputs: outputs.mappings,
       controls: controls.mappings,
+      ...(normalizedDsl.dsl ? { dsl: normalizedDsl.dsl } : {}),
+    },
+  };
+}
+
+function validateNormalizedGroupGraphs(groups, getNodeDefinition) {
+  for (const [groupId, groupDefinition] of Object.entries(groups ?? {})) {
+    const indexResult = buildGraphIndexes(
+      {
+        nodes: groupDefinition.graph.nodes,
+        edges: groupDefinition.graph.edges,
+        groups,
+      },
+      getNodeDefinition,
+    );
+
+    if (indexResult.issue) {
+      return {
+        issue: createModelIssue(
+          indexResult.issue.code,
+          indexResult.issue.message,
+          indexResult.issue.entityId ?? groupId,
+        ),
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+export function normalizeGroupDefinition(group, getNodeDefinition, options = {}) {
+  const source = options.source ?? "load";
+  const normalizedShell = normalizeGroupShell(group);
+
+  if (normalizedShell.issue) {
+    return normalizedShell;
+  }
+
+  if (options.skipGraph === true) {
+    return normalizedShell;
+  }
+
+  const normalizedGraph = normalizeGraphSnapshot(group.graph, getNodeDefinition, {
+    source,
+    allowGroups: false,
+    validateGroupRef: options.validateGroupRef,
+    groups: options.groups,
+  });
+
+  if (normalizedGraph.issue) {
+    return normalizedGraph;
+  }
+
+  const canonicalControls = canonicalizeGroupControls(
+    normalizedShell.group.controls,
+    normalizedGraph.snapshot,
+    getNodeDefinition,
+    options.groups,
+    normalizedShell.group.id,
+    {
+      source,
+      validateGroupRef: options.validateGroupRef,
+    },
+  );
+
+  if (canonicalControls.issue) {
+    return canonicalControls;
+  }
+
+  return {
+    group: {
+      ...normalizedShell.group,
+      controls: canonicalControls.mappings,
+      graph: normalizedGraph.snapshot,
     },
   };
 }
@@ -485,6 +827,7 @@ export function normalizeGraphSnapshot(snapshot, getNodeDefinition, options = {}
   const source = options.source ?? "load";
   const allowGroups = options.allowGroups !== false;
   const validateGroupRef = options.validateGroupRef !== false;
+  const externalGroups = options.groups;
   const baseSnapshot = snapshot ?? createEmptyGraphSnapshot();
 
   if (!isPlainObject(baseSnapshot)) {
@@ -518,13 +861,36 @@ export function normalizeGraphSnapshot(snapshot, getNodeDefinition, options = {}
         };
       }
 
+      const groupShells = {};
+
+      for (const [groupId, groupDefinition] of Object.entries(baseSnapshot.groups)) {
+        const normalizedGroup = normalizeGroupDefinition(
+          { ...groupDefinition, id: groupDefinition.id ?? groupId },
+          getNodeDefinition,
+          {
+            ...options,
+            skipGraph: true,
+          },
+        );
+
+        if (normalizedGroup.issue) {
+          return normalizedGroup;
+        }
+
+        groupShells[groupId] = normalizedGroup.group;
+      }
+
       groups = {};
 
       for (const [groupId, groupDefinition] of Object.entries(baseSnapshot.groups)) {
         const normalizedGroup = normalizeGroupDefinition(
           { ...groupDefinition, id: groupDefinition.id ?? groupId },
           getNodeDefinition,
-          options,
+          {
+            ...options,
+            groups: groupShells,
+            validateGroupRef: true,
+          },
         );
 
         if (normalizedGroup.issue) {
@@ -532,6 +898,24 @@ export function normalizeGraphSnapshot(snapshot, getNodeDefinition, options = {}
         }
 
         groups[groupId] = normalizedGroup.group;
+      }
+
+      const dependencyAnalysis = analyzeGroupDependencies(groups);
+
+      if (!dependencyAnalysis.ok) {
+        return {
+          issue: createModelIssue(
+            MODEL_ERROR_CODES.GROUP_CYCLE,
+            `Group dependency cycle detected: ${dependencyAnalysis.cycle.join(" -> ")}.`,
+            dependencyAnalysis.cycle[0],
+          ),
+        };
+      }
+
+      const groupGraphValidation = validateNormalizedGroupGraphs(groups, getNodeDefinition);
+
+      if (groupGraphValidation.issue) {
+        return groupGraphValidation;
       }
     }
   } else if (baseSnapshot.groups !== undefined && Object.keys(baseSnapshot.groups).length > 0) {
@@ -543,10 +927,12 @@ export function normalizeGraphSnapshot(snapshot, getNodeDefinition, options = {}
     };
   }
 
+  const resolvedGroups = groups ?? (!allowGroups ? externalGroups : undefined);
+
   const nodes = [];
 
   for (const rawNode of baseSnapshot.nodes) {
-    const normalizedNode = normalizeNodeRecord(rawNode, getNodeDefinition, groups, {
+    const normalizedNode = normalizeNodeRecord(rawNode, getNodeDefinition, resolvedGroups, {
       source,
       validateGroupRef,
     });

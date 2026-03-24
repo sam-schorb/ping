@@ -1,4 +1,4 @@
-import { GROUP_NODE_TYPE, PORT_DIRECTIONS } from "../graph/constants.js";
+import { isGroupBackedNodeType, PORT_DIRECTIONS } from "../graph/constants.js";
 import { createPortId } from "../graph/ports.js";
 import { createGroupedNodeDefinition } from "../nodes/grouped-node.js";
 import { BUILD_ERROR_CODES, createBuildIssue } from "./errors.js";
@@ -136,10 +136,6 @@ export function getOutputRole(shape, portSlot) {
   return portSlot < shape.outputs ? BUILD_EDGE_ROLES.SIGNAL : undefined;
 }
 
-export function getDirectParamPortSlot(shape) {
-  return shape.inputs + shape.controlPorts;
-}
-
 function createBuildShape(node, definition, layout) {
   return {
     nodeId: node.id,
@@ -180,12 +176,12 @@ export function resolveNodeShape(node, groups, registry, issues, context = {}) {
 
   let definition = baseDefinition;
 
-  if (node.type === GROUP_NODE_TYPE) {
+  if (isGroupBackedNodeType(node.type)) {
     if (typeof node.groupRef !== "string" || node.groupRef.trim() === "") {
       issues.push(
         createBuildIssue(
           BUILD_ERROR_CODES.GROUP_MAPPING_INVALID,
-          `Group node "${node.id}" must reference a valid group definition.`,
+          `Group-backed node "${node.id}" must reference a valid group definition.`,
           {
             ...context,
             nodeId: node.id,
@@ -201,7 +197,7 @@ export function resolveNodeShape(node, groups, registry, issues, context = {}) {
       issues.push(
         createBuildIssue(
           BUILD_ERROR_CODES.GROUP_MAPPING_INVALID,
-          `Group node "${node.id}" references missing group "${node.groupRef}".`,
+          `Group-backed node "${node.id}" references missing group "${node.groupRef}".`,
           {
             ...context,
             nodeId: node.id,

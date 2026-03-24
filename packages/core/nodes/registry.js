@@ -498,6 +498,23 @@ export const NODE_REGISTRY = Object.freeze([
     hidden: true,
     paletteOrder: 900,
   }),
+  defineNode({
+    type: "code",
+    label: "Code",
+    description: "A private DSL-authored node backed by a generated group definition.",
+    category: "Groups",
+    icon: "code",
+    color: CATEGORY_COLORS.Groups,
+    layout: "custom",
+    inputs: 0,
+    outputs: 0,
+    controlPorts: 0,
+    hasParam: false,
+    defaultParam: 1,
+    onSignal: groupSignal,
+    hidden: false,
+    paletteOrder: 910,
+  }),
 ]);
 
 export function buildRegistryIndex(registry = NODE_REGISTRY) {

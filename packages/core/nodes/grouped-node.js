@@ -1,3 +1,4 @@
+import { GROUP_NODE_TYPE } from "../graph/constants.js";
 import { getLayout } from "./archetypes.js";
 
 export function getGroupPortCounts(groupDefinition) {
@@ -20,11 +21,15 @@ export function getGroupLayout(groupDefinition) {
 
 export function createGroupedNodeDefinition(groupDefinition, baseDefinition = {}) {
   const counts = getGroupPortCounts(groupDefinition);
+  const type = baseDefinition.type ?? GROUP_NODE_TYPE;
 
   return {
     ...baseDefinition,
-    type: "group",
-    label: groupDefinition?.name ?? baseDefinition.label ?? "Group",
+    type,
+    label:
+      type === GROUP_NODE_TYPE
+        ? groupDefinition?.name ?? baseDefinition.label ?? "Group"
+        : baseDefinition.label ?? groupDefinition?.name ?? "Group",
     description:
       baseDefinition.description ??
       "A project-defined group node with a custom derived layout.",

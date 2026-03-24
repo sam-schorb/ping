@@ -57,6 +57,78 @@ function pushHistoryEntry(entries, entry) {
 
 function traceAudio() {}
 
+function serializeMapEntries(map, mapper = ([key, value]) => [key, value]) {
+  if (!(map instanceof Map)) {
+    return [];
+  }
+
+  return Array.from(map.entries()).map(mapper);
+}
+
+function collectDomThumbs(root = document) {
+  if (!root?.querySelectorAll) {
+    return [];
+  }
+
+  return Array.from(root.querySelectorAll(".ping-editor__thumb")).map((element, index) => ({
+    index,
+    cx: Number(element.getAttribute("cx")),
+    cy: Number(element.getAttribute("cy")),
+    r: Number(element.getAttribute("r")),
+  }));
+}
+
+function collectDomEdgePaths(root = document) {
+  if (!root?.querySelectorAll) {
+    return [];
+  }
+
+  return Array.from(root.querySelectorAll(".ping-editor__edge-path")).map((element) => ({
+    edgeId: element.getAttribute("data-edge-id"),
+    path: element.getAttribute("d"),
+  }));
+}
+
+function serializeCompiledEdges(graph) {
+  return (graph?.edges ?? []).map((edge) => ({
+    id: edge.id,
+    delay: edge.delay,
+    from: edge.from,
+    to: edge.to,
+    role: edge.role,
+  }));
+}
+
+function serializeRouteDelays(routes) {
+  if (!(routes?.edgeDelays instanceof Map)) {
+    return [];
+  }
+
+  return Array.from(routes.edgeDelays.entries()).map(([edgeId, delay]) => ({
+    edgeId,
+    delay,
+  }));
+}
+
+function serializeActiveEvents(runtime) {
+  if (!(runtime?.activeEvents instanceof Map)) {
+    return [];
+  }
+
+  return Array.from(runtime.activeEvents.values()).map((event) => ({
+    edgeId: event.edgeId,
+    nodeId: event.nodeId,
+    tick: event.tick,
+    emitTime: event.emitTime,
+    internal: event.__internal === true,
+    seq: event.__seq,
+  }));
+}
+
+function delayMs(duration) {
+  return new Promise((resolve) => window.setTimeout(resolve, duration));
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -219,6 +291,9 @@ export function Ping() {
     canUndo: false,
     canRedo: false,
   });
+  const snapshotRef = useRef(snapshot);
+  const routesRef = useRef(routes);
+  const selectionRef = useRef(selection);
 
   function getSidebarActionButton(actionId) {
     if (typeof document === "undefined") {
@@ -825,6 +900,18 @@ export function Ping() {
   }, [runtime]);
 
   useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
+
+  useEffect(() => {
+    routesRef.current = routes;
+  }, [routes]);
+
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
+
+  useEffect(() => {
     window.__PING_AUDIO_DEBUG__ = {
       get audioMetrics() {
         return audioSessionRef.current?.getMetrics?.();
@@ -846,6 +933,105 @@ export function Ping() {
       },
       get slots() {
         return slotsRef.current;
+      },
+      get snapshot() {
+        return snapshotRef.current;
+      },
+      get routes() {
+        return routesRef.current;
+      },
+      get selection() {
+        return selectionRef.current;
+      },
+      get compiledGraph() {
+        return compiledGraphRef.current;
+      },
+      captureVisualActivity() {
+        const lastTick = previewRuntime.getMetrics?.()?.lastTickProcessed ?? 0;
+        const rawThumbs = previewRuntime.getThumbState?.(lastTick) ?? [];
+        const projectedThumbs =
+          previewRuntime.getProjectedThumbState?.(lastTick) ?? rawThumbs;
+        const presentedActivity =
+          previewRuntime.getPresentedActivity?.(lastTick, 1) ?? {
+            thumbs: projectedThumbs,
+            nodePulseStates:
+              previewRuntime.getProjectedNodePulseState?.(lastTick, 1) ??
+              previewRuntime.getNodePulseState?.(lastTick, 1) ??
+              [],
+          };
+        const routeEdges = Array.from(routesRef.current?.edgeRoutes?.entries?.() ?? []).map(
+          ([edgeId, route]) => ({
+            edgeId,
+            totalLength: route?.totalLength ?? null,
+            path: route?.svgPathD ?? "",
+          }),
+        );
+        const domThumbs = collectDomThumbs(document);
+        const domEdgePaths = collectDomEdgePaths(document);
+        const compiledPresentation = compiledGraphRef.current?.presentation;
+        const compiledEdges = serializeCompiledEdges(compiledGraphRef.current);
+        const routeDelays = serializeRouteDelays(routesRef.current);
+        const activeEvents = serializeActiveEvents(previewRuntime);
+
+        return {
+          lastTickProcessed: lastTick,
+          rawThumbs,
+          projectedThumbs,
+          presentedThumbs: presentedActivity.thumbs ?? [],
+          nodePulseStates: presentedActivity.nodePulseStates ?? [],
+          routeEdges,
+          snapshotEdges: (snapshotRef.current?.edges ?? []).map((edge) => ({
+            id: edge.id,
+            from: edge.from,
+            to: edge.to,
+          })),
+          routeDelays,
+          compiledEdges,
+          activeEvents,
+          domThumbs,
+          domEdgePaths,
+          presentation: {
+            visibleEdgeIdByCompiledEdgeId: serializeMapEntries(
+              compiledPresentation?.visibleEdgeIdByCompiledEdgeId,
+            ),
+            collapsedOwnerNodeIdByCompiledEdgeId: serializeMapEntries(
+              compiledPresentation?.collapsedOwnerNodeIdByCompiledEdgeId,
+            ),
+          },
+          summary: {
+            rawThumbCount: rawThumbs.length,
+            projectedThumbCount: projectedThumbs.length,
+            presentedThumbCount: (presentedActivity.thumbs ?? []).length,
+            domThumbCount: domThumbs.length,
+            activeEventCount: activeEvents.length,
+            presentedEdgeIds: Array.from(
+              new Set((presentedActivity.thumbs ?? []).map((thumb) => thumb.edgeId)),
+            ).sort(),
+            routeEdgeIds: routeEdges.map((route) => route.edgeId).sort(),
+            domEdgeIds: Array.from(
+              new Set(domEdgePaths.map((path) => path.edgeId).filter(Boolean)),
+            ).sort(),
+          },
+        };
+      },
+      async sampleVisualActivity(options = {}) {
+        const samples = Number.isFinite(options.samples) ? Math.max(1, Math.trunc(options.samples)) : 12;
+        const intervalMs = Number.isFinite(options.delayMs)
+          ? Math.max(0, Math.trunc(options.delayMs))
+          : 120;
+        const result = [];
+
+        for (let index = 0; index < samples; index += 1) {
+          result.push({
+            sample: index,
+            ...this.captureVisualActivity(),
+          });
+          if (index < samples - 1) {
+            await delayMs(intervalMs);
+          }
+        }
+
+        return result;
       },
       runtime,
       previewRuntime,

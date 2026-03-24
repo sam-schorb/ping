@@ -87,7 +87,8 @@ function mapModelIssueToSerialIssue(issue, rawGraph) {
 
   if (
     issue.code === "MODEL_GROUP_NOT_FOUND" ||
-    issue.code === "MODEL_GROUP_REF_INVALID"
+    issue.code === "MODEL_GROUP_REF_INVALID" ||
+    issue.code === "MODEL_GROUP_CYCLE"
   ) {
     return createSerialIssue(
       SERIAL_ERROR_CODES.INVALID_GROUP,

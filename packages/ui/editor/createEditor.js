@@ -1,8 +1,12 @@
 import {
+  CURRENT_GROUP_DSL_FORMAT_VERSION,
   createDefaultSampleSlots,
   createEmptyGraphSnapshot,
   DEFAULT_TEMPO_BPM,
+  exportGroupDsl,
   getPortAnchor,
+  isGroupBackedNodeType,
+  lowerGroupDsl,
   resolveRoutingConfig,
   routeEdge,
 } from "@ping/core";
@@ -17,7 +21,7 @@ import {
 import { renderSamplesPanel } from "../panels/samples.js";
 import { applyWheelPan, applyWheelZoom, getViewportSize, getWorldCursorFromPointer } from "../render/panzoom.js";
 import {
-  createHiddenThumbEdgeIds,
+  createPreviewRenderState,
   renderSvgMarkup,
   renderThumbLayerMarkup,
 } from "../render/svg-layer.js";
@@ -39,6 +43,7 @@ import {
   clampCamera,
   clampParamInput,
   createEmptyRoute,
+  getResolvedNodeDefinition,
   getNodeWorldBounds,
   snapWorldPoint,
 } from "./geometry.js";
@@ -95,6 +100,19 @@ const MENU_FOCUS_ATTRIBUTE_NAMES = [
   "data-menu-category",
   "data-palette-type",
   "data-group-ref",
+  "data-testid",
+  "name",
+  "type",
+];
+const SIDEBAR_FOCUS_ATTRIBUTE_NAMES = [
+  "data-action",
+  "data-group-id",
+  "data-group-kind",
+  "data-group-index",
+  "data-group-direction",
+  "data-node-id",
+  "data-node-type",
+  "data-sidebar-action-id",
   "data-testid",
   "name",
   "type",
@@ -426,7 +444,90 @@ function getSelectionTarget(snapshot, selection) {
   return null;
 }
 
-function buildSelectionInspectPanel(snapshot, registry, selection) {
+function formatInspectDslStatus(mode, syncStatus, dirty) {
+  const modeLabel = mode === "generated" ? "Generated source" : "Authored source";
+  const syncLabel = syncStatus === "stale" ? "stale" : "in sync";
+
+  return `${modeLabel} · ${syncLabel}${dirty ? " · unsaved changes" : ""}`;
+}
+
+function buildInspectDslDiagnostics(issues) {
+  if (!issues.length) {
+    return "";
+  }
+
+  return `
+    <ul class="ping-editor__diagnostics">
+      ${issues
+        .map(
+          (issue, index) => `
+            <li class="ping-editor__diagnostic" data-testid="inspect-dsl-diagnostic-${index}">
+              <span class="ping-editor__diagnostic-code">${escapeHtml(issue.code)}</span>
+              <span class="ping-editor__diagnostic-message">${escapeHtml(issue.message)}</span>
+            </li>
+          `,
+        )
+        .join("")}
+    </ul>
+  `;
+}
+
+function buildNodeDslInspectSection(inspectDslView) {
+  if (!inspectDslView) {
+    return "";
+  }
+
+  const title = inspectDslView.nodeType === "code" ? "Code DSL" : "Group DSL";
+
+  return `
+    <section class="ping-editor__panel-section">
+      <h3 class="ping-editor__panel-title">${escapeHtml(title)}</h3>
+      <p class="ping-editor__inspect-copy" data-testid="inspect-dsl-status">
+        ${escapeHtml(
+          formatInspectDslStatus(
+            inspectDslView.mode,
+            inspectDslView.syncStatus,
+            inspectDslView.dirty,
+          ),
+        )}
+      </p>
+      <label class="ping-editor__field">
+        <span>Source</span>
+        <textarea
+          class="ping-editor__panel-textarea"
+          name="group-dsl-source"
+          data-action="group-dsl-source"
+          data-group-id="${escapeHtml(inspectDslView.groupId)}"
+          data-node-type="${escapeHtml(inspectDslView.nodeType)}"
+          data-testid="inspect-dsl-source"
+        >${escapeHtml(inspectDslView.text)}</textarea>
+      </label>
+      ${buildInspectDslDiagnostics(inspectDslView.issues ?? [])}
+      <div class="ping-editor__action-row">
+        <button
+          class="ping-editor__panel-button is-primary"
+          type="button"
+          data-action="apply-group-dsl"
+          data-group-id="${escapeHtml(inspectDslView.groupId)}"
+          data-testid="inspect-dsl-apply"
+        >
+          Apply DSL
+        </button>
+        <button
+          class="ping-editor__panel-button"
+          type="button"
+          data-action="reload-group-dsl"
+          data-group-id="${escapeHtml(inspectDslView.groupId)}"
+          data-testid="inspect-dsl-reload"
+        >
+          Reload
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+function buildSelectionInspectPanel(snapshot, registry, selection, inspectDslView = null) {
   const target = getSelectionTarget(snapshot, selection);
 
   if (!target) {
@@ -488,6 +589,11 @@ function buildSelectionInspectPanel(snapshot, registry, selection) {
           </button>
         </div>
       </section>
+      ${
+        isGroupBackedNodeType(node.type) && typeof node.groupRef === "string"
+          ? buildNodeDslInspectSection(inspectDslView)
+          : ""
+      }
     `;
   }
 
@@ -561,16 +667,32 @@ function buildGroupConnectionView(candidates) {
 
 function createGroupMappingId(kind, entry) {
   if (kind === "controls") {
-    return `control:${entry.nodeId}:${entry.paramKey ?? "param"}`;
+    return `control:${entry.nodeId}:slot:${entry.controlSlot}`;
   }
 
   return `${kind.slice(0, -1)}:${entry.nodeId}:${entry.portSlot}`;
 }
 
-function getGroupDraftNodeLabel(node, registry) {
-  const definition = registry.getNodeDefinition(node.type);
+function createGroupTargetPortKey(nodeId, targetPortSlot) {
+  return `${nodeId}:${targetPortSlot}`;
+}
 
-  return node.name || definition?.label || node.type;
+function createGroupControlLabel(label, definition, controlSlot) {
+  if (definition.hasParam && (definition.controlPorts ?? 0) === 1 && controlSlot === 0) {
+    return `${label} param`;
+  }
+
+  return `${label} control ${controlSlot + 1}`;
+}
+
+function getGroupDraftNodeLabel(node, registry, groupLibrary) {
+  const definition = registry.getNodeDefinition(node.type);
+  const groupLabel =
+    node.type === "group" && typeof node.groupRef === "string"
+      ? groupLibrary?.[node.groupRef]?.name
+      : undefined;
+
+  return node.name || groupLabel || definition?.label || node.type;
 }
 
 function createFallbackGroupMappingEntry(kind, entry) {
@@ -578,18 +700,90 @@ function createFallbackGroupMappingEntry(kind, entry) {
     ...(entry.label !== undefined
       ? { label: entry.label }
       : kind === "controls"
-        ? { label: `${entry.nodeId} ${(entry.paramKey ?? "param").trim() || "param"}` }
+      ? {
+            label:
+              entry.controlSlot !== undefined
+                ? `${entry.nodeId} control ${entry.controlSlot + 1}`
+                : `${entry.nodeId} control 1`,
+          }
         : { label: `${entry.nodeId} ${kind.slice(0, -1)} ${(entry.portSlot ?? 0) + 1}` }),
     id: createGroupMappingId(kind, entry),
     nodeId: entry.nodeId,
     ...(kind === "controls"
-      ? { paramKey: entry.paramKey ?? "param" }
+      ? {
+          controlSlot: entry.controlSlot ?? 0,
+        }
       : { portSlot: entry.portSlot }),
   };
 }
 
-function buildGroupDefinitionCandidates(group, registry) {
+function buildGroupControlCandidateEntries(groupLibrary, node, definition, registry) {
+  const label = getGroupDraftNodeLabel(node, registry, groupLibrary);
+
+  if (isGroupBackedNodeType(node.type) && typeof node.groupRef === "string") {
+    const childGroup = groupLibrary?.[node.groupRef];
+    const signalInputs = definition.inputs ?? 0;
+
+    return (childGroup?.controls ?? []).map((mapping, controlSlot) => ({
+      id: createGroupMappingId("controls", { nodeId: node.id, controlSlot }),
+      label: mapping.label ? `${label} ${mapping.label}` : `${label} control ${controlSlot + 1}`,
+      nodeId: node.id,
+      controlSlot,
+      targetPortSlot: signalInputs + controlSlot,
+    }));
+  }
+
+  if ((definition.controlPorts ?? 0) > 0) {
+    return Array.from({ length: definition.controlPorts }, (_, controlSlot) => ({
+      id: createGroupMappingId("controls", { nodeId: node.id, controlSlot }),
+      label: createGroupControlLabel(label, definition, controlSlot),
+      nodeId: node.id,
+      controlSlot,
+      targetPortSlot: (definition.inputs ?? 0) + controlSlot,
+    }));
+  }
+
+  return [];
+}
+
+function classifyDraftControlCandidates(groupLibrary, snapshot, node, definition, registry, internalControlEdgeByKey) {
+  const available = [];
+  const unavailable = [];
+
+  for (const entry of buildGroupControlCandidateEntries(groupLibrary, node, definition, registry)) {
+    const blockingEdge = internalControlEdgeByKey.get(
+      createGroupTargetPortKey(entry.nodeId, entry.targetPortSlot),
+    );
+
+    if (blockingEdge) {
+      unavailable.push({
+        ...entry,
+        unavailableReason: "already driven internally",
+        displaceInternalEdgeId: blockingEdge.id,
+        restoreBucket: "unavailable",
+      });
+      continue;
+    }
+
+    available.push({
+      ...entry,
+      restoreBucket: "available",
+    });
+  }
+
+  return {
+    available,
+    unavailable,
+  };
+}
+
+function buildGroupDefinitionCandidates(group, registry, groupLibrary) {
   const graph = group?.graph ?? { nodes: [], edges: [] };
+  const snapshot = {
+    nodes: graph.nodes,
+    edges: graph.edges,
+    groups: groupLibrary,
+  };
   const candidates = {
     nodes: graph.nodes.map((node) => ({ ...node })),
     edges: graph.edges.map((edge) => ({
@@ -601,10 +795,16 @@ function buildGroupDefinitionCandidates(group, registry) {
     inputs: [],
     outputs: [],
     controls: [],
+    unavailable: {
+      controls: [],
+    },
   };
+  const internalControlEdgeByKey = new Map(
+    graph.edges.map((edge) => [`${edge.to.nodeId}:${edge.to.portSlot}`, edge]),
+  );
 
   for (const node of graph.nodes) {
-    const definition = registry.getNodeDefinition(node.type);
+    const definition = getResolvedNodeDefinition(snapshot, node, registry);
 
     if (!definition) {
       continue;
@@ -613,7 +813,7 @@ function buildGroupDefinitionCandidates(group, registry) {
     for (let portSlot = 0; portSlot < (definition.inputs ?? 0); portSlot += 1) {
       candidates.inputs.push({
         id: createGroupMappingId("inputs", { nodeId: node.id, portSlot }),
-        label: `${getGroupDraftNodeLabel(node, registry)} input ${portSlot + 1}`,
+        label: `${getGroupDraftNodeLabel(node, registry, groupLibrary)} input ${portSlot + 1}`,
         nodeId: node.id,
         portSlot,
       });
@@ -622,26 +822,29 @@ function buildGroupDefinitionCandidates(group, registry) {
     for (let portSlot = 0; portSlot < (definition.outputs ?? 0); portSlot += 1) {
       candidates.outputs.push({
         id: createGroupMappingId("outputs", { nodeId: node.id, portSlot }),
-        label: `${getGroupDraftNodeLabel(node, registry)} output ${portSlot + 1}`,
+        label: `${getGroupDraftNodeLabel(node, registry, groupLibrary)} output ${portSlot + 1}`,
         nodeId: node.id,
         portSlot,
       });
     }
 
-    if (definition.hasParam) {
-      candidates.controls.push({
-        id: createGroupMappingId("controls", { nodeId: node.id, paramKey: "param" }),
-        label: `${getGroupDraftNodeLabel(node, registry)} param`,
-        nodeId: node.id,
-        paramKey: "param",
-      });
-    }
+    const controlCandidates = classifyDraftControlCandidates(
+      groupLibrary,
+      snapshot,
+      node,
+      definition,
+      registry,
+      internalControlEdgeByKey,
+    );
+
+    candidates.controls.push(...controlCandidates.available);
+    candidates.unavailable.controls.push(...controlCandidates.unavailable);
   }
 
   return candidates;
 }
 
-function renderGroupMappingSection(kind, title, active, available, selectedId = "") {
+function renderGroupMappingSection(kind, title, active, available, selectedId = "", unavailable = []) {
   return `
     <section class="ping-editor__group-section">
       <h3>${escapeHtml(title)}</h3>
@@ -714,6 +917,40 @@ function renderGroupMappingSection(kind, title, active, available, selectedId = 
           `
           : ""
       }
+      ${
+        unavailable.length > 0
+          ? `
+            <div class="ping-editor__group-unavailable">
+              <h4 class="ping-editor__group-unavailable-title">Unavailable</h4>
+              <ul class="ping-editor__mapping-list">
+                ${unavailable
+                  .map(
+                    (entry, index) => `
+                      <li class="ping-editor__mapping-item" data-testid="group-${kind}-unavailable-${index}">
+                        <div class="ping-editor__mapping-copy">
+                          <span>${escapeHtml(entry.label ?? entry.id)}</span>
+                          <span class="ping-editor__mapping-note">${escapeHtml(entry.unavailableReason ?? "Unavailable")}</span>
+                        </div>
+                        <div class="ping-editor__mapping-actions">
+                          <button
+                            class="ping-editor__mini-button"
+                            type="button"
+                            data-action="group-expose-instead"
+                            data-group-kind="${kind}"
+                            data-group-id="${escapeHtml(entry.id)}"
+                          >
+                            Expose Instead…
+                          </button>
+                        </div>
+                      </li>
+                    `,
+                  )
+                  .join("")}
+              </ul>
+            </div>
+          `
+          : ""
+      }
     </section>
   `;
 }
@@ -778,6 +1015,7 @@ function renderGroupConfigPanel(groupDraft, { sidebarCollapsed = false } = {}) {
         groupDraft.mappings.inputs,
         groupDraft.available.inputs,
         groupDraft.restoreSelection.inputs,
+        groupDraft.unavailable.inputs ?? [],
       )}
       ${renderGroupMappingSection(
         "outputs",
@@ -785,6 +1023,7 @@ function renderGroupConfigPanel(groupDraft, { sidebarCollapsed = false } = {}) {
         groupDraft.mappings.outputs,
         groupDraft.available.outputs,
         groupDraft.restoreSelection.outputs,
+        groupDraft.unavailable.outputs ?? [],
       )}
       ${renderGroupMappingSection(
         "controls",
@@ -792,6 +1031,7 @@ function renderGroupConfigPanel(groupDraft, { sidebarCollapsed = false } = {}) {
         groupDraft.mappings.controls,
         groupDraft.available.controls,
         groupDraft.restoreSelection.controls,
+        groupDraft.unavailable.controls ?? [],
       )}
       <div class="ping-editor__action-row">
         <button class="ping-editor__panel-button" type="button" data-action="close-group-config">
@@ -1362,6 +1602,27 @@ function createStyles(config) {
         color: var(--ping-chrome-ink-muted);
         word-break: break-word;
       }
+      .ping-editor__mapping-copy {
+        display: grid;
+        gap: 4px;
+      }
+      .ping-editor__mapping-note {
+        color: var(--ping-chrome-ink-muted);
+        font-size: 11px;
+      }
+      .ping-editor__group-unavailable {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .ping-editor__group-unavailable-title {
+        margin: 0;
+        color: var(--ping-chrome-ink-muted);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
       .ping-editor__field {
         display: grid;
         gap: 6px;
@@ -1748,7 +2009,12 @@ function buildPanelMarkup(state) {
       return buildMultiNodeInspectPanel(state.groupSelection.nodeIds);
     }
 
-    return buildSelectionInspectPanel(state.snapshot, state.registry, state.selection);
+    return buildSelectionInspectPanel(
+      state.snapshot,
+      state.registry,
+      state.selection,
+      state.inspectDslDraft,
+    );
   }
 
   if (tab === "groups") {
@@ -1847,6 +2113,11 @@ function createGroupDraft(state) {
       outputs: [],
       controls: [],
     },
+    unavailable: {
+      inputs: candidates.unavailable?.inputs ?? [],
+      outputs: candidates.unavailable?.outputs ?? [],
+      controls: candidates.unavailable?.controls ?? [],
+    },
     restoreSelection: {
       inputs: candidates.inputs[0]?.id ?? "",
       outputs: candidates.outputs[0]?.id ?? "",
@@ -1857,7 +2128,7 @@ function createGroupDraft(state) {
 }
 
 function createGroupEditDraft(state, group) {
-  const candidates = buildGroupDefinitionCandidates(group, state.registry);
+  const candidates = buildGroupDefinitionCandidates(group, state.registry, state.snapshot.groups);
   const candidateMaps = {
     inputs: new Map(candidates.inputs.map((entry) => [entry.id, entry])),
     outputs: new Map(candidates.outputs.map((entry) => [entry.id, entry])),
@@ -1887,6 +2158,13 @@ function createGroupEditDraft(state, group) {
     outputs: candidates.outputs.filter((entry) => !activeIds.outputs.has(entry.id)),
     controls: candidates.controls.filter((entry) => !activeIds.controls.has(entry.id)),
   };
+  const unavailable = {
+    inputs: candidates.unavailable?.inputs ?? [],
+    outputs: candidates.unavailable?.outputs ?? [],
+    controls: (candidates.unavailable?.controls ?? []).filter(
+      (entry) => !activeIds.controls.has(entry.id),
+    ),
+  };
 
   return {
     mode: "edit",
@@ -1897,6 +2175,7 @@ function createGroupEditDraft(state, group) {
     selectedNodeIds: group.graph.nodes.map((node) => node.id),
     mappings,
     available,
+    unavailable,
     restoreSelection: {
       inputs: available.inputs[0]?.id ?? "",
       outputs: available.outputs[0]?.id ?? "",
@@ -2034,6 +2313,14 @@ function restoreMenuFocus(root, focusState) {
   return restoreScopedFocus(root, ".ping-editor__menu", focusState);
 }
 
+function readSidebarFocusState(root) {
+  return readScopedFocusState(root, ".ping-editor__sidebar-content", SIDEBAR_FOCUS_ATTRIBUTE_NAMES);
+}
+
+function restoreSidebarFocus(root, focusState) {
+  return restoreScopedFocus(root, ".ping-editor__sidebar-content", focusState);
+}
+
 function moveArrayEntry(list, index, nextIndex) {
   if (index < 0 || index >= list.length || nextIndex < 0 || nextIndex >= list.length) {
     return list;
@@ -2071,6 +2358,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     routes: createEmptyRoutes(),
     diagnostics: [],
     localIssues: createEmptyNoticeList(),
+    inspectDslDraft: null,
     palette: [],
     selection: createEmptySelection(),
     groupSelection: createEmptyGroupSelection(),
@@ -2104,6 +2392,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     frameDurationMs: 16,
     previewThrottleMs: 0,
     lastPreviewUpdateAt: 0,
+    previewRenderState: null,
     boxSelection: null,
     lastPointerWorld: { x: 2, y: 2 },
     lastPointerScreen: { x: 48, y: 48 },
@@ -2190,6 +2479,114 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       ...state.localIssues,
     ].slice(0, 6);
     markDirty();
+  }
+
+  function getSelectedGroupBackedNodeContext() {
+    if (state.selection.kind !== "node") {
+      return null;
+    }
+
+    const node = state.snapshot.nodes.find((entry) => entry.id === state.selection.nodeId);
+
+    if (!node || !isGroupBackedNodeType(node.type) || typeof node.groupRef !== "string") {
+      return null;
+    }
+
+    return {
+      node,
+      nodeType: node.type,
+      groupId: node.groupRef,
+      group: state.snapshot.groups?.[node.groupRef] ?? null,
+    };
+  }
+
+  function deriveInspectDslSource(context) {
+    if (!context?.group) {
+      return {
+        text: "",
+        mode: "generated",
+        syncStatus: "stale",
+        issues: [
+          createLocalIssue(
+            "UI_GROUP_NOT_FOUND",
+            `Group "${context?.groupId ?? ""}" was not found.`,
+            { severity: "error" },
+          ),
+        ],
+      };
+    }
+
+    if (
+      typeof context.group.dsl?.source === "string" &&
+      (context.group.dsl.formatVersion ?? 1) >= CURRENT_GROUP_DSL_FORMAT_VERSION
+    ) {
+      return {
+        text: context.group.dsl.source,
+        mode: context.group.dsl.mode ?? "authored",
+        syncStatus: context.group.dsl.syncStatus ?? "in-sync",
+        issues: [],
+      };
+    }
+
+    const exported = exportGroupDsl(context.group, state.registry, {
+      groups: state.snapshot.groups ?? {},
+    });
+
+    if (!exported.ok) {
+      return {
+        text: "",
+        mode: "generated",
+        syncStatus: "stale",
+        issues: exported.errors.map((issue) => ({ ...issue })),
+      };
+    }
+
+    return {
+      text: exported.text,
+      mode: "generated",
+      syncStatus: "in-sync",
+      issues: [],
+    };
+  }
+
+  function syncInspectDslDraft({ preserveDirty = true } = {}) {
+    const context = getSelectedGroupBackedNodeContext();
+
+    if (!context) {
+      state.inspectDslDraft = null;
+      return;
+    }
+
+    const sourceView = deriveInspectDslSource(context);
+    const nextDraft = {
+      groupId: context.groupId,
+      nodeId: context.node.id,
+      nodeType: context.nodeType,
+      text: sourceView.text,
+      mode: sourceView.mode,
+      syncStatus: sourceView.syncStatus,
+      issues: sourceView.issues,
+      dirty: false,
+    };
+    const current = state.inspectDslDraft;
+
+    if (!current || current.groupId !== context.groupId) {
+      state.inspectDslDraft = nextDraft;
+      return;
+    }
+
+    if (preserveDirty && current.dirty) {
+      state.inspectDslDraft = {
+        ...current,
+        nodeId: context.node.id,
+        nodeType: context.nodeType,
+        mode: sourceView.mode,
+        syncStatus: sourceView.syncStatus,
+      };
+      return;
+    }
+
+    state.inspectDslDraft = nextDraft;
   }
 
   function emitSelection(nextSelection) {
@@ -2527,6 +2924,91 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     emitGraphOps([createSetParamOp(nodeId, nextValue)], reason);
   }
 
+  function handleInspectDslInput(value) {
+    if (!state.inspectDslDraft) {
+      return;
+    }
+
+    state.inspectDslDraft = {
+      ...state.inspectDslDraft,
+      text: value,
+      dirty: true,
+      issues: [],
+    };
+    markDirty();
+  }
+
+  function insertInspectDslNewline(target) {
+    if (!state.inspectDslDraft || !target) {
+      return;
+    }
+
+    const value = target.value ?? "";
+    const start = Number.isInteger(target.selectionStart) ? target.selectionStart : value.length;
+    const end = Number.isInteger(target.selectionEnd) ? target.selectionEnd : value.length;
+    const nextValue = `${value.slice(0, start)}\n${value.slice(end)}`;
+    const nextCaret = start + 1;
+
+    target.value = nextValue;
+
+    if (typeof target.setSelectionRange === "function") {
+      target.setSelectionRange(nextCaret, nextCaret);
+    }
+
+    handleInspectDslInput(nextValue);
+  }
+
+  function handleReloadInspectDsl() {
+    syncInspectDslDraft({ preserveDirty: false });
+    markDirty();
+  }
+
+  function handleApplyInspectDsl() {
+    const context = getSelectedGroupBackedNodeContext();
+
+    if (!context || !context.group || !state.inspectDslDraft) {
+      return;
+    }
+
+    const lowered = lowerGroupDsl(state.inspectDslDraft.text, state.registry, {
+      existingGroup: context.group,
+      groups: state.snapshot.groups ?? {},
+    });
+
+    if (!lowered.ok) {
+      state.inspectDslDraft = {
+        ...state.inspectDslDraft,
+        issues: lowered.errors.map((issue) => ({ ...issue })),
+        dirty: true,
+      };
+      markDirty();
+      return;
+    }
+
+    const reason = context.nodeType === "code" ? "edit code DSL" : "edit group DSL";
+    emitUndo(reason);
+    emitGraphOps(
+      [
+        {
+          type: "updateGroup",
+          payload: {
+            group: lowered.group,
+          },
+        },
+      ],
+      reason,
+    );
+    state.inspectDslDraft = {
+      ...state.inspectDslDraft,
+      text: lowered.group.dsl?.source ?? state.inspectDslDraft.text,
+      mode: lowered.group.dsl?.mode ?? "authored",
+      syncStatus: "in-sync",
+      issues: [],
+      dirty: false,
+    };
+    markDirty();
+  }
+
   function handleRemoveGroup(groupId) {
     if (!canRemoveGroup(state.snapshot, groupId)) {
       pushLocalIssue("UI_GROUP_IN_USE", `Group "${groupId}" cannot be removed while an instance still exists.`, {
@@ -2616,6 +3098,10 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     }
 
     const removed = active[index];
+    const restoreBucket =
+      kind === "controls" && removed.restoreBucket === "unavailable"
+        ? "unavailable"
+        : "available";
 
     state.groupDraft = {
       ...state.groupDraft,
@@ -2625,11 +3111,24 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       },
       available: {
         ...state.groupDraft.available,
-        [kind]: [...state.groupDraft.available[kind], removed],
+        [kind]:
+          restoreBucket === "available"
+            ? [...state.groupDraft.available[kind], removed]
+            : state.groupDraft.available[kind],
+      },
+      unavailable: {
+        ...state.groupDraft.unavailable,
+        [kind]:
+          restoreBucket === "unavailable"
+            ? [...state.groupDraft.unavailable[kind], removed]
+            : state.groupDraft.unavailable[kind],
       },
       restoreSelection: {
         ...state.groupDraft.restoreSelection,
-        [kind]: state.groupDraft.restoreSelection[kind] || removed.id,
+        [kind]:
+          restoreBucket === "available"
+            ? state.groupDraft.restoreSelection[kind] || removed.id
+            : state.groupDraft.restoreSelection[kind],
       },
     };
     markDirty();
@@ -2654,7 +3153,13 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       ...state.groupDraft,
       mappings: {
         ...state.groupDraft.mappings,
-        [kind]: [...state.groupDraft.mappings[kind], entry],
+        [kind]: [
+          ...state.groupDraft.mappings[kind],
+          {
+            ...entry,
+            restoreBucket: entry.restoreBucket ?? "available",
+          },
+        ],
       },
       available: {
         ...state.groupDraft.available,
@@ -2663,6 +3168,58 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       restoreSelection: {
         ...state.groupDraft.restoreSelection,
         [kind]: nextAvailable[0]?.id ?? "",
+      },
+    };
+    markDirty();
+  }
+
+  function handleGroupExposeInstead(kind, mappingId) {
+    if (!state.groupDraft || kind !== "controls") {
+      return;
+    }
+
+    const blocked = state.groupDraft.unavailable.controls.find((entry) => entry.id === mappingId);
+
+    if (!blocked) {
+      return;
+    }
+
+    const confirmMessage =
+      "This will disconnect the internal control cable to this input and expose it at the group boundary.";
+    const confirmFn = state.root?.ownerDocument?.defaultView?.confirm;
+    let confirmed = true;
+
+    if (typeof confirmFn === "function") {
+      try {
+        confirmed = confirmFn(confirmMessage);
+      } catch {
+        confirmed = false;
+      }
+    }
+
+    if (!confirmed) {
+      return;
+    }
+
+    const nextUnavailable = state.groupDraft.unavailable.controls.filter(
+      (entry) => entry.id !== mappingId,
+    );
+
+    state.groupDraft = {
+      ...state.groupDraft,
+      mappings: {
+        ...state.groupDraft.mappings,
+        controls: [
+          ...state.groupDraft.mappings.controls,
+          {
+            ...blocked,
+            restoreBucket: "unavailable",
+          },
+        ],
+      },
+      unavailable: {
+        ...state.groupDraft.unavailable,
+        controls: nextUnavailable,
       },
     };
     markDirty();
@@ -3452,6 +4009,21 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
   }
 
   function handleKeyDown(event) {
+    if (
+      event.target?.matches?.("[data-action='group-dsl-source']") &&
+      event.key === "Enter"
+    ) {
+      if (event.shiftKey) {
+        event.preventDefault();
+        insertInspectDslNewline(event.target);
+        return;
+      }
+
+      event.preventDefault();
+      handleApplyInspectDsl();
+      return;
+    }
+
     if (isTextInputTarget(event.target)) {
       return;
     }
@@ -3775,6 +4347,16 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       return true;
     }
 
+    if (action === "apply-group-dsl") {
+      handleApplyInspectDsl();
+      return true;
+    }
+
+    if (action === "reload-group-dsl") {
+      handleReloadInspectDsl();
+      return true;
+    }
+
     if (action === "focus-diagnostic") {
       const index = Number(target.getAttribute("data-issue-index"));
       const issue = [...state.localIssues, ...state.diagnostics][index];
@@ -3823,6 +4405,14 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
 
     if (action === "group-restore") {
       handleGroupRestore(target.getAttribute("data-group-kind"));
+      return true;
+    }
+
+    if (action === "group-expose-instead") {
+      handleGroupExposeInstead(
+        target.getAttribute("data-group-kind"),
+        target.getAttribute("data-group-id"),
+      );
       return true;
     }
 
@@ -3892,6 +4482,11 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
         focusSearch: false,
       };
       markDirty();
+      return;
+    }
+
+    if (target.matches("[data-action='group-dsl-source']")) {
+      handleInspectDslInput(target.value);
       return;
     }
 
@@ -3991,6 +4586,18 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
   }
 
 function buildViewportCanvasMarkup(selection) {
+  const previewRenderState = createPreviewRenderState(
+    state.snapshot,
+    state.routes,
+    state.registry,
+    {
+      drag: state.drag,
+      nodePositionOverrides: state.nodePositionOverrides,
+    },
+    state.config,
+  );
+  state.previewRenderState = previewRenderState;
+
   return renderSvgMarkup({
     snapshot: state.snapshot,
     routes: state.routes,
@@ -4007,6 +4614,7 @@ function buildViewportCanvasMarkup(selection) {
     nodePulseStates: state.nodePulseStates,
     previewRoute: buildPreviewRouteForRender(),
     boxSelection: state.boxSelection,
+    previewRenderState,
   });
 }
 
@@ -4036,10 +4644,12 @@ function buildViewportMarkup(selection) {
     state.groupDialogScrollTop = readGroupDialogScrollTop(state.root);
     const groupDialogFocusState = readGroupDialogFocusState(state.root);
     const menuFocusState = readMenuFocusState(state.root);
+    const sidebarFocusState = readSidebarFocusState(state.root);
     const shouldRestoreViewportFocus = state.root.ownerDocument?.activeElement === state.viewport;
 
     const selection = clearDeletedSelection(state.selection, state.snapshot);
     state.selection = selection;
+    syncInspectDslDraft();
     const cursor = getViewportCursor();
 
     state.root.innerHTML = `
@@ -4199,6 +4809,10 @@ function buildViewportMarkup(selection) {
     const restoredMenuFocus =
       state.menu.open && state.menu.focusSearch ? false : restoreMenuFocus(state.root, menuFocusState);
     const restoredGroupDialogFocus = restoreGroupDialogFocus(state.root, groupDialogFocusState);
+    const restoredSidebarFocus =
+      restoredMenuFocus || restoredGroupDialogFocus
+        ? false
+        : restoreSidebarFocus(state.root, sidebarFocusState);
     if (!restoredMenuFocus && state.menu.open && state.menu.focusSearch) {
       focusElementWithoutScroll(state.root.querySelector('[data-testid="palette-menu-search"]'));
       state.menu = {
@@ -4206,7 +4820,12 @@ function buildViewportMarkup(selection) {
         focusSearch: false,
       };
     }
-    if (shouldRestoreViewportFocus && !restoredGroupDialogFocus && !state.menu.open) {
+    if (
+      shouldRestoreViewportFocus &&
+      !restoredGroupDialogFocus &&
+      !restoredSidebarFocus &&
+      !state.menu.open
+    ) {
       focusViewport();
     }
     state.dirty = false;
@@ -4241,15 +4860,26 @@ function buildViewportMarkup(selection) {
       return;
     }
 
+    const previewRenderState =
+      state.previewRenderState ??
+      createPreviewRenderState(
+        state.snapshot,
+        state.routes,
+        state.registry,
+        {
+          drag: state.drag,
+          nodePositionOverrides: state.nodePositionOverrides,
+        },
+        state.config,
+      );
+    state.previewRenderState = previewRenderState;
+
     thumbLayer.innerHTML = renderThumbLayerMarkup({
-      routes: state.routes,
+      routes: previewRenderState.displayRoutes,
       camera: state.camera,
       config: state.config,
       thumbs: state.thumbs,
-      hiddenEdgeIds: createHiddenThumbEdgeIds(state.snapshot, {
-        drag: state.drag,
-        nodePositionOverrides: state.nodePositionOverrides,
-      }),
+      hiddenEdgeIds: previewRenderState.hiddenThumbEdgeIds,
     });
     state.dirty = false;
     state.thumbOnlyDirty = false;
@@ -4273,9 +4903,23 @@ function buildViewportMarkup(selection) {
 
     state.lastFrameAt = now;
     const currentTick = state.runtime?.getMetrics?.()?.lastTickProcessed ?? 0;
-    const nextThumbs = state.runtime?.getThumbState?.(currentTick) ?? [];
+    const presentedActivity = state.runtime?.getPresentedActivity?.(
+      currentTick,
+      getNodePulseWindowTicks(state.tempo),
+    );
+    const nextThumbs =
+      presentedActivity?.thumbs ??
+      state.runtime?.getProjectedThumbState?.(currentTick) ??
+      state.runtime?.getThumbState?.(currentTick) ??
+      [];
     const nextNodePulseStates =
-      state.runtime?.getNodePulseState?.(currentTick, getNodePulseWindowTicks(state.tempo)) ?? [];
+      presentedActivity?.nodePulseStates ??
+      state.runtime?.getProjectedNodePulseState?.(
+        currentTick,
+        getNodePulseWindowTicks(state.tempo),
+      ) ??
+      state.runtime?.getNodePulseState?.(currentTick, getNodePulseWindowTicks(state.tempo)) ??
+      [];
 
     if (JSON.stringify(nextThumbs) !== JSON.stringify(state.thumbs)) {
       state.thumbs = nextThumbs;

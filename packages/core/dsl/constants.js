@@ -1,0 +1,1 @@
+export const CURRENT_GROUP_DSL_FORMAT_VERSION = 2;

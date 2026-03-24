@@ -72,7 +72,7 @@ test("grouped-node helpers derive custom layouts from group definitions", () => 
     name: "Group A",
     inputs: [{ nodeId: "n1", portSlot: 0 }, { nodeId: "n2", portSlot: 0 }],
     outputs: [{ nodeId: "n3", portSlot: 0 }, { nodeId: "n4", portSlot: 0 }],
-    controls: [{ nodeId: "n5", paramKey: "param" }],
+    controls: [{ nodeId: "n5", controlSlot: 0 }],
   };
 
   const layout = getGroupLayout(groupDefinition);

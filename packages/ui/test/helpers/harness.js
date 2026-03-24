@@ -167,13 +167,30 @@ export function createRuntimeStub() {
   return {
     resetCount: 0,
     thumbs: [],
+    projectedThumbs: null,
     nodePulses: [],
+    projectedNodePulses: null,
+    presentedActivity: null,
     lastTickProcessed: 1,
     getThumbState() {
       return this.thumbs;
     },
+    getProjectedThumbState() {
+      return this.projectedThumbs ?? this.thumbs;
+    },
     getNodePulseState() {
       return this.nodePulses;
+    },
+    getProjectedNodePulseState() {
+      return this.projectedNodePulses ?? this.nodePulses;
+    },
+    getPresentedActivity() {
+      return (
+        this.presentedActivity ?? {
+          thumbs: this.getProjectedThumbState(),
+          nodePulseStates: this.getProjectedNodePulseState(),
+        }
+      );
     },
     getMetrics() {
       return { lastTickProcessed: this.lastTickProcessed };
@@ -298,6 +315,13 @@ export function createEditorHarness(options = {}) {
         }),
       );
     },
+    applyOps(ops) {
+      const result = model.applyOps(ops);
+      assert.equal(result.ok, true, `Graph ops failed: ${JSON.stringify(result.errors)}`);
+      sync();
+      return result;
+    },
+    sync,
     pointerDown(element, options = {}) {
       element.dispatchEvent(createPointerEvent(window, "pointerdown", options));
     },

@@ -1,3 +1,5 @@
+import { isCodeNodeGroupId } from "@ping/core";
+
 import { resolveIcon } from "../icons/library.js";
 
 function escapeHtml(value) {
@@ -102,9 +104,9 @@ function createGroupMenuItem(group, order) {
 
 function buildPaletteMenuEntries(palette, groups) {
   const builtInItems = palette.map((item, index) => createBuiltInMenuItem(item, index));
-  const groupItems = Object.values(groups ?? {}).map((group, index) =>
-    createGroupMenuItem(group, builtInItems.length + index),
-  );
+  const groupItems = Object.values(groups ?? {})
+    .filter((group) => !isCodeNodeGroupId(group?.id))
+    .map((group, index) => createGroupMenuItem(group, builtInItems.length + index));
 
   return [...builtInItems, ...groupItems];
 }

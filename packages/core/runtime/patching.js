@@ -35,6 +35,7 @@ function cloneGroupMeta(groupMeta) {
         groupId,
         {
           nodeIds: [...meta.nodeIds],
+          edgeIds: [...(meta.edgeIds ?? [])],
           externalInputs: meta.externalInputs.map((item) => ({ ...item })),
           externalOutputs: meta.externalOutputs.map((item) => ({ ...item })),
           controls: meta.controls.map((item) => ({ ...item })),
@@ -48,6 +49,20 @@ function cloneDebugMaps(debug) {
   return {
     nodeIdToSourceId: new Map(debug.nodeIdToSourceId),
     edgeIdToSourceId: new Map(debug.edgeIdToSourceId),
+  };
+}
+
+function clonePresentationMaps(presentation) {
+  return {
+    visibleNodeIdByCompiledNodeId: new Map(
+      presentation.visibleNodeIdByCompiledNodeId,
+    ),
+    visibleEdgeIdByCompiledEdgeId: new Map(
+      presentation.visibleEdgeIdByCompiledEdgeId,
+    ),
+    collapsedOwnerNodeIdByCompiledEdgeId: new Map(
+      presentation.collapsedOwnerNodeIdByCompiledEdgeId,
+    ),
   };
 }
 
@@ -85,6 +100,9 @@ export function cloneCompiledGraph(graph) {
     nodeIndex: new Map(graph.nodeIndex),
     edgeIndex: new Map(graph.edgeIndex),
     ...(graph.groupMeta ? { groupMeta: cloneGroupMeta(graph.groupMeta) } : {}),
+    ...(graph.presentation
+      ? { presentation: clonePresentationMaps(graph.presentation) }
+      : {}),
     ...(graph.debug ? { debug: cloneDebugMaps(graph.debug) } : {}),
   };
 }
@@ -182,6 +200,20 @@ export function applyGraphPatch(graph, patch = {}) {
     sortByNextOrder(graph.edges, createOrderIndex(patch.edgeOrder));
   }
 
+  if (Object.prototype.hasOwnProperty.call(patch, "groupMeta")) {
+    graph.groupMeta = patch.groupMeta ? cloneGroupMeta(patch.groupMeta) : undefined;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, "presentation")) {
+    graph.presentation = patch.presentation
+      ? clonePresentationMaps(patch.presentation)
+      : undefined;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, "debug")) {
+    graph.debug = patch.debug ? cloneDebugMaps(patch.debug) : undefined;
+  }
+
   reindexCompiledGraph(graph);
 
   return {
@@ -210,6 +242,15 @@ function sameEdgeShape(left, right) {
   );
 }
 
+function canPreserveInFlightEvents(left, right) {
+  return (
+    left.id === right.id &&
+    left.to.nodeId === right.to.nodeId &&
+    left.to.portSlot === right.to.portSlot &&
+    left.role === right.role
+  );
+}
+
 export function createCompiledGraphPatch(previousGraph, nextGraph) {
   const previousNodes = new Map((previousGraph?.nodes ?? []).map((node) => [node.id, node]));
   const nextNodes = new Map((nextGraph?.nodes ?? []).map((node) => [node.id, node]));
@@ -222,6 +263,7 @@ export function createCompiledGraphPatch(previousGraph, nextGraph) {
   const removedEdges = [];
   const addedEdges = [];
   const updatedEdges = [];
+  const preservedActiveEdges = [];
 
   for (const [nodeId, previousNode] of previousNodes.entries()) {
     const nextNode = nextNodes.get(nodeId);
@@ -265,12 +307,22 @@ export function createCompiledGraphPatch(previousGraph, nextGraph) {
       removedNodeSet.has(previousEdge.from.nodeId) ||
       removedNodeSet.has(previousEdge.to.nodeId)
     ) {
+      removedEdges.push(edgeId);
+
+      if (nextEdge) {
+        addedEdges.push(nextEdge);
+      }
+
       continue;
     }
 
     if (!sameEdgeShape(previousEdge, nextEdge)) {
       removedEdges.push(edgeId);
       addedEdges.push(nextEdge);
+
+      if (canPreserveInFlightEvents(previousEdge, nextEdge)) {
+        preservedActiveEdges.push(edgeId);
+      }
       continue;
     }
 
@@ -297,5 +349,25 @@ export function createCompiledGraphPatch(previousGraph, nextGraph) {
     updatedParams,
     nodeOrder: (nextGraph?.nodes ?? []).map((node) => node.id),
     edgeOrder: (nextGraph?.edges ?? []).map((edge) => edge.id),
+    ...(preservedActiveEdges.length > 0 ? { preservedActiveEdges } : {}),
+    ...((previousGraph?.groupMeta || nextGraph?.groupMeta)
+      ? {
+          groupMeta: nextGraph?.groupMeta
+            ? cloneGroupMeta(nextGraph.groupMeta)
+            : undefined,
+        }
+      : {}),
+    ...((previousGraph?.presentation || nextGraph?.presentation)
+      ? {
+          presentation: nextGraph?.presentation
+            ? clonePresentationMaps(nextGraph.presentation)
+            : undefined,
+        }
+      : {}),
+    ...((previousGraph?.debug || nextGraph?.debug)
+      ? {
+          debug: nextGraph?.debug ? cloneDebugMaps(nextGraph.debug) : undefined,
+        }
+      : {}),
   };
 }

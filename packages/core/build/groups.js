@@ -1,14 +1,15 @@
-import { DEFAULT_PARAM_KEY, GROUP_NODE_TYPE, PORT_DIRECTIONS } from "../graph/constants.js";
+import { PORT_DIRECTIONS, isGroupBackedNodeType } from "../graph/constants.js";
+import { analyzeGroupDependencies } from "../graph/grouping.js";
 import {
   BUILD_EDGE_ROLES,
   createCompiledPortId,
-  getDirectParamPortSlot,
   getInputRole,
   getOutputRole,
   normalizeEditorEdge,
   resolveNodeShape,
 } from "./roles.js";
 import { BUILD_ERROR_CODES, createBuildIssue } from "./errors.js";
+import { createGroupDelaySourceId } from "./delay-sources.js";
 
 function createGroupNodeId(instanceNodeId, sourceNodeId) {
   return `${instanceNodeId}::node::${sourceNodeId}`;
@@ -35,6 +36,26 @@ function cloneEdgeRecord(edge) {
   };
 }
 
+function cloneTemplateNodeEntry(nodeEntry) {
+  return {
+    id: nodeEntry.id,
+    sourceId: nodeEntry.sourceId,
+    sourceNode: cloneNodeRecord(nodeEntry.sourceNode),
+    shape: nodeEntry.shape,
+  };
+}
+
+function cloneTemplateEdgeEntry(edgeEntry) {
+  return {
+    id: edgeEntry.id,
+    sourceId: edgeEntry.sourceId,
+    delaySourceId: edgeEntry.delaySourceId,
+    from: { ...edgeEntry.from },
+    to: { ...edgeEntry.to },
+    role: edgeEntry.role,
+  };
+}
+
 function createMappingIssue(groupId, message, details = {}) {
   return createBuildIssue(BUILD_ERROR_CODES.GROUP_MAPPING_INVALID, message, {
     groupId,
@@ -42,7 +63,180 @@ function createMappingIssue(groupId, message, details = {}) {
   });
 }
 
-function validateSignalInputMapping(groupId, mapping, groupPortSlot, nodeShapeById, usedInputs) {
+function createResolvedControlKey(mapping) {
+  return `${mapping.nodeId}:control:${mapping.controlSlot}`;
+}
+
+function instantiateTemplateEntries(instanceNodeId, template, { includeInstanceMeta = false } = {}) {
+  const nodeIdMap = new Map();
+  const nodeIds = [];
+
+  for (const nodeEntry of template.nodes) {
+    const instantiatedNodeId = createGroupNodeId(instanceNodeId, nodeEntry.id);
+    nodeIdMap.set(nodeEntry.id, instantiatedNodeId);
+    nodeIds.push(instantiatedNodeId);
+  }
+
+  const nodes = template.nodes.map((nodeEntry) => ({
+    id: nodeIdMap.get(nodeEntry.id),
+    sourceId: nodeEntry.sourceId,
+    sourceNode: cloneNodeRecord(nodeEntry.sourceNode),
+    shape: nodeEntry.shape,
+    ...(includeInstanceMeta
+      ? {
+          groupInstanceId: instanceNodeId,
+          groupId: template.groupId,
+        }
+      : {}),
+  }));
+
+  const edges = template.edges.map((edgeEntry) => ({
+    id: createGroupEdgeId(instanceNodeId, edgeEntry.id),
+    sourceId: edgeEntry.sourceId,
+    delaySourceId: edgeEntry.delaySourceId,
+    from: {
+      nodeId: nodeIdMap.get(edgeEntry.from.nodeId),
+      portSlot: edgeEntry.from.portSlot,
+    },
+    to: {
+      nodeId: nodeIdMap.get(edgeEntry.to.nodeId),
+      portSlot: edgeEntry.to.portSlot,
+    },
+    role: edgeEntry.role,
+    ...(includeInstanceMeta
+      ? {
+          groupInstanceId: instanceNodeId,
+          groupId: template.groupId,
+        }
+      : {}),
+  }));
+  const edgeIds = edges.map((edge) => edge.id);
+
+  return {
+    nodes,
+    edges,
+    nodeIdMap,
+    meta: {
+      nodeIds,
+      edgeIds,
+      externalInputs: template.externalInputs.map((mapping) => ({
+        groupPortSlot: mapping.groupPortSlot,
+        nodeId: nodeIdMap.get(mapping.nodeId),
+        portSlot: mapping.portSlot,
+      })),
+      externalOutputs: template.externalOutputs.map((mapping) => ({
+        groupPortSlot: mapping.groupPortSlot,
+        nodeId: nodeIdMap.get(mapping.nodeId),
+        portSlot: mapping.portSlot,
+      })),
+      controls: template.controls.map((mapping) => ({
+        groupPortSlot: mapping.groupPortSlot,
+        nodeId: nodeIdMap.get(mapping.nodeId),
+        controlSlot: mapping.controlSlot,
+        portSlot: mapping.portSlot,
+      })),
+    },
+  };
+}
+
+function resolveTemplateSourceEndpoint(groupId, endpoint, groupInstances) {
+  const groupInstance = groupInstances.get(endpoint.nodeId);
+
+  if (!groupInstance) {
+    return {
+      endpoint: {
+        nodeId: endpoint.nodeId,
+        portSlot: endpoint.portSlot,
+      },
+    };
+  }
+
+  const mapping = groupInstance.externalOutputs[endpoint.portSlot];
+
+  if (!mapping) {
+    return {
+      issue: createMappingIssue(
+        groupId,
+        `Nested group node "${endpoint.nodeId}" output slot ${endpoint.portSlot} does not exist.`,
+        {
+          nodeId: endpoint.nodeId,
+          portSlot: endpoint.portSlot,
+        },
+      ),
+    };
+  }
+
+  return {
+    endpoint: {
+      nodeId: mapping.nodeId,
+      portSlot: mapping.portSlot,
+    },
+  };
+}
+
+function resolveTemplateTargetEndpoint(groupId, endpoint, groupInstances) {
+  const groupInstance = groupInstances.get(endpoint.nodeId);
+
+  if (!groupInstance) {
+    return {
+      endpoint: {
+        nodeId: endpoint.nodeId,
+        portSlot: endpoint.portSlot,
+      },
+    };
+  }
+
+  if (endpoint.portSlot < groupInstance.externalInputs.length) {
+    const mapping = groupInstance.externalInputs[endpoint.portSlot];
+
+    if (!mapping) {
+      return {
+        issue: createMappingIssue(
+          groupId,
+          `Nested group node "${endpoint.nodeId}" input slot ${endpoint.portSlot} does not exist.`,
+          {
+            nodeId: endpoint.nodeId,
+            portSlot: endpoint.portSlot,
+          },
+        ),
+      };
+    }
+
+    return {
+      endpoint: {
+        nodeId: mapping.nodeId,
+        portSlot: mapping.portSlot,
+      },
+      role: BUILD_EDGE_ROLES.SIGNAL,
+    };
+  }
+
+  const controlSlot = endpoint.portSlot - groupInstance.externalInputs.length;
+  const controlMapping = groupInstance.controls[controlSlot];
+
+  if (!controlMapping) {
+    return {
+      issue: createMappingIssue(
+        groupId,
+        `Nested group node "${endpoint.nodeId}" control slot ${controlSlot} does not exist.`,
+        {
+          nodeId: endpoint.nodeId,
+          portSlot: endpoint.portSlot,
+        },
+      ),
+    };
+  }
+
+  return {
+    endpoint: {
+      nodeId: controlMapping.nodeId,
+      portSlot: controlMapping.portSlot,
+    },
+    role: BUILD_EDGE_ROLES.CONTROL,
+  };
+}
+
+function resolveSignalInputMapping(groupId, mapping, groupPortSlot, nodeShapeById, groupInstances, usedInputs) {
   const shape = nodeShapeById.get(mapping.nodeId);
 
   if (!shape) {
@@ -67,10 +261,23 @@ function validateSignalInputMapping(groupId, mapping, groupPortSlot, nodeShapeBy
     };
   }
 
+  const resolved = resolveTemplateTargetEndpoint(
+    groupId,
+    {
+      nodeId: mapping.nodeId,
+      portSlot: mapping.portSlot,
+    },
+    groupInstances,
+  );
+
+  if (resolved.issue) {
+    return resolved;
+  }
+
   const portId = createCompiledPortId(
-    mapping.nodeId,
+    resolved.endpoint.nodeId,
     PORT_DIRECTIONS.IN,
-    mapping.portSlot,
+    resolved.endpoint.portSlot,
   );
 
   if (usedInputs.has(portId)) {
@@ -79,8 +286,8 @@ function validateSignalInputMapping(groupId, mapping, groupPortSlot, nodeShapeBy
         groupId,
         `Group "${groupId}" input mapping ${groupPortSlot} targets an internal input port that is already connected.`,
         {
-          nodeId: mapping.nodeId,
-          portSlot: mapping.portSlot,
+          nodeId: resolved.endpoint.nodeId,
+          portSlot: resolved.endpoint.portSlot,
         },
       ),
     };
@@ -91,13 +298,20 @@ function validateSignalInputMapping(groupId, mapping, groupPortSlot, nodeShapeBy
   return {
     mapping: {
       groupPortSlot,
-      nodeId: mapping.nodeId,
-      portSlot: mapping.portSlot,
+      nodeId: resolved.endpoint.nodeId,
+      portSlot: resolved.endpoint.portSlot,
     },
   };
 }
 
-function validateSignalOutputMapping(groupId, mapping, groupPortSlot, nodeShapeById, usedOutputs) {
+function resolveSignalOutputMapping(
+  groupId,
+  mapping,
+  groupPortSlot,
+  nodeShapeById,
+  groupInstances,
+  usedOutputs,
+) {
   const shape = nodeShapeById.get(mapping.nodeId);
 
   if (!shape) {
@@ -122,10 +336,23 @@ function validateSignalOutputMapping(groupId, mapping, groupPortSlot, nodeShapeB
     };
   }
 
+  const resolved = resolveTemplateSourceEndpoint(
+    groupId,
+    {
+      nodeId: mapping.nodeId,
+      portSlot: mapping.portSlot,
+    },
+    groupInstances,
+  );
+
+  if (resolved.issue) {
+    return resolved;
+  }
+
   const portId = createCompiledPortId(
-    mapping.nodeId,
+    resolved.endpoint.nodeId,
     PORT_DIRECTIONS.OUT,
-    mapping.portSlot,
+    resolved.endpoint.portSlot,
   );
 
   if (usedOutputs.has(portId)) {
@@ -134,8 +361,8 @@ function validateSignalOutputMapping(groupId, mapping, groupPortSlot, nodeShapeB
         groupId,
         `Group "${groupId}" output mapping ${groupPortSlot} targets an internal output port that is already connected.`,
         {
-          nodeId: mapping.nodeId,
-          portSlot: mapping.portSlot,
+          nodeId: resolved.endpoint.nodeId,
+          portSlot: resolved.endpoint.portSlot,
         },
       ),
     };
@@ -146,13 +373,13 @@ function validateSignalOutputMapping(groupId, mapping, groupPortSlot, nodeShapeB
   return {
     mapping: {
       groupPortSlot,
-      nodeId: mapping.nodeId,
-      portSlot: mapping.portSlot,
+      nodeId: resolved.endpoint.nodeId,
+      portSlot: resolved.endpoint.portSlot,
     },
   };
 }
 
-function validateControlMapping(groupId, mapping, groupPortSlot, nodeShapeById, usedControls) {
+function resolveControlMapping(groupId, mapping, groupPortSlot, nodeShapeById, groupInstances, usedControls) {
   const shape = nodeShapeById.get(mapping.nodeId);
 
   if (!shape) {
@@ -164,13 +391,11 @@ function validateControlMapping(groupId, mapping, groupPortSlot, nodeShapeById, 
     };
   }
 
-  const paramKey = mapping.paramKey ?? DEFAULT_PARAM_KEY;
-
-  if (paramKey !== DEFAULT_PARAM_KEY || shape.hasParam !== true) {
+  if (!Number.isInteger(mapping.controlSlot) || mapping.controlSlot < 0) {
     return {
       issue: createMappingIssue(
         groupId,
-        `Group "${groupId}" control mapping ${groupPortSlot} must target a valid internal param.`,
+        `Group "${groupId}" control mapping ${groupPortSlot} must target a valid control slot.`,
         {
           nodeId: mapping.nodeId,
         },
@@ -178,15 +403,62 @@ function validateControlMapping(groupId, mapping, groupPortSlot, nodeShapeById, 
     };
   }
 
-  const controlKey = `${mapping.nodeId}:${paramKey}`;
+  let resolvedMapping;
+
+  if (groupInstances.has(mapping.nodeId)) {
+    const groupInstance = groupInstances.get(mapping.nodeId);
+    const childControlMapping = groupInstance.controls[mapping.controlSlot];
+
+    if (!childControlMapping) {
+      return {
+        issue: createMappingIssue(
+          groupId,
+          `Group "${groupId}" control mapping ${groupPortSlot} references missing child control slot ${mapping.controlSlot} on node "${mapping.nodeId}".`,
+          {
+            nodeId: mapping.nodeId,
+            controlSlot: mapping.controlSlot,
+          },
+        ),
+      };
+    }
+
+    resolvedMapping = {
+      groupPortSlot,
+      nodeId: childControlMapping.nodeId,
+      controlSlot: childControlMapping.controlSlot,
+      portSlot: childControlMapping.portSlot,
+    };
+  } else {
+    if (mapping.controlSlot >= shape.controlPorts) {
+      return {
+        issue: createMappingIssue(
+          groupId,
+          `Group "${groupId}" control mapping ${groupPortSlot} must target a valid internal control input.`,
+          {
+            nodeId: mapping.nodeId,
+            controlSlot: mapping.controlSlot,
+          },
+        ),
+      };
+    }
+
+    resolvedMapping = {
+      groupPortSlot,
+      nodeId: mapping.nodeId,
+      controlSlot: mapping.controlSlot,
+      portSlot: shape.inputs + mapping.controlSlot,
+    };
+  }
+
+  const controlKey = createResolvedControlKey(resolvedMapping);
 
   if (usedControls.has(controlKey)) {
     return {
       issue: createMappingIssue(
         groupId,
-        `Group "${groupId}" control mapping ${groupPortSlot} duplicates the mapped param on node "${mapping.nodeId}".`,
+        `Group "${groupId}" control mapping ${groupPortSlot} duplicates an already mapped internal control target.`,
         {
-          nodeId: mapping.nodeId,
+          nodeId: resolvedMapping.nodeId,
         },
       ),
     };
@@ -195,21 +467,39 @@ function validateControlMapping(groupId, mapping, groupPortSlot, nodeShapeById, 
   usedControls.add(controlKey);
 
   return {
-    mapping: {
-      groupPortSlot,
-      nodeId: mapping.nodeId,
-      paramKey,
-      virtualPortSlot: getDirectParamPortSlot(shape),
-    },
+    mapping: resolvedMapping,
   };
 }
 
 export function buildGroupTemplates(snapshot, registry, issues) {
   const templates = new Map();
+  const groups = snapshot.groups ?? {};
+  const dependencyAnalysis = analyzeGroupDependencies(groups);
 
-  for (const [groupId, groupDefinition] of Object.entries(snapshot.groups ?? {})) {
+  if (!dependencyAnalysis.ok) {
+    issues.push(
+      createMappingIssue(
+        dependencyAnalysis.cycle[0],
+        `Group dependency cycle detected: ${dependencyAnalysis.cycle.join(" -> ")}.`,
+        {
+          groupId: dependencyAnalysis.cycle[0],
+        },
+      ),
+    );
+    return templates;
+  }
+
+  for (const groupId of dependencyAnalysis.order) {
+    const groupDefinition = groups[groupId];
+
+    if (!groupDefinition) {
+      continue;
+    }
+
     const nodeShapeById = new Map();
+    const groupInstances = new Map();
     const templateNodes = [];
+    const templateEdges = [];
     const groupContext = { groupId };
 
     for (const node of groupDefinition.graph.nodes) {
@@ -225,11 +515,25 @@ export function buildGroupTemplates(snapshot, registry, issues) {
         continue;
       }
 
-      if (node.type === GROUP_NODE_TYPE) {
+      nodeShapeById.set(node.id, shape);
+
+      if (!isGroupBackedNodeType(node.type)) {
+        templateNodes.push({
+          id: node.id,
+          sourceId: node.id,
+          sourceNode: cloneNodeRecord(node),
+          shape,
+        });
+        continue;
+      }
+
+      const childTemplate = templates.get(node.groupRef);
+
+      if (!childTemplate) {
         issues.push(
           createMappingIssue(
             groupId,
-            `Group "${groupId}" cannot contain nested group nodes.`,
+            `Group "${groupId}" references missing child template "${node.groupRef}".`,
             {
               nodeId: node.id,
             },
@@ -238,14 +542,12 @@ export function buildGroupTemplates(snapshot, registry, issues) {
         continue;
       }
 
-      nodeShapeById.set(node.id, shape);
-      templateNodes.push({
-        sourceNode: cloneNodeRecord(node),
-        shape,
-      });
+      const expansion = instantiateTemplateEntries(node.id, childTemplate);
+      groupInstances.set(node.id, expansion.meta);
+      templateNodes.push(...expansion.nodes.map(cloneTemplateNodeEntry));
+      templateEdges.push(...expansion.edges.map(cloneTemplateEdgeEntry));
     }
 
-    const templateEdges = [];
     const occupiedInputs = new Set();
     const occupiedOutputs = new Set();
 
@@ -261,25 +563,48 @@ export function buildGroupTemplates(snapshot, registry, issues) {
         continue;
       }
 
+      const resolvedSource = resolveTemplateSourceEndpoint(groupId, normalized.edge.from, groupInstances);
+
+      if (resolvedSource.issue) {
+        issues.push(resolvedSource.issue);
+        continue;
+      }
+
+      const resolvedTarget = resolveTemplateTargetEndpoint(groupId, normalized.edge.to, groupInstances);
+
+      if (resolvedTarget.issue) {
+        issues.push(resolvedTarget.issue);
+        continue;
+      }
+
       occupiedOutputs.add(
         createCompiledPortId(
-          normalized.edge.from.nodeId,
+          resolvedSource.endpoint.nodeId,
           PORT_DIRECTIONS.OUT,
-          normalized.edge.from.portSlot,
+          resolvedSource.endpoint.portSlot,
         ),
       );
       occupiedInputs.add(
         createCompiledPortId(
-          normalized.edge.to.nodeId,
+          resolvedTarget.endpoint.nodeId,
           PORT_DIRECTIONS.IN,
-          normalized.edge.to.portSlot,
+          resolvedTarget.endpoint.portSlot,
         ),
       );
 
       templateEdges.push({
-        sourceEdge: cloneEdgeRecord(edge),
-        normalizedEdge: normalized.edge,
-        role: normalized.role,
+        id: edge.id,
+        sourceId: edge.id,
+        delaySourceId: createGroupDelaySourceId(groupId, edge.id),
+        from: {
+          nodeId: resolvedSource.endpoint.nodeId,
+          portSlot: resolvedSource.endpoint.portSlot,
+        },
+        to: {
+          nodeId: resolvedTarget.endpoint.nodeId,
+          portSlot: resolvedTarget.endpoint.portSlot,
+        },
+        role: resolvedTarget.role ?? normalized.role,
       });
     }
 
@@ -291,11 +616,12 @@ export function buildGroupTemplates(snapshot, registry, issues) {
     const controlOccupancy = new Set();
 
     for (let index = 0; index < groupDefinition.inputs.length; index += 1) {
-      const result = validateSignalInputMapping(
+      const result = resolveSignalInputMapping(
         groupId,
         groupDefinition.inputs[index],
         index,
         nodeShapeById,
+        groupInstances,
         inputOccupancy,
       );
 
@@ -308,11 +634,12 @@ export function buildGroupTemplates(snapshot, registry, issues) {
     }
 
     for (let index = 0; index < groupDefinition.outputs.length; index += 1) {
-      const result = validateSignalOutputMapping(
+      const result = resolveSignalOutputMapping(
         groupId,
         groupDefinition.outputs[index],
         index,
         nodeShapeById,
+        groupInstances,
         outputOccupancy,
       );
 
@@ -325,11 +652,12 @@ export function buildGroupTemplates(snapshot, registry, issues) {
     }
 
     for (let index = 0; index < groupDefinition.controls.length; index += 1) {
-      const result = validateControlMapping(
+      const result = resolveControlMapping(
         groupId,
         groupDefinition.controls[index],
         index,
         nodeShapeById,
+        groupInstances,
         controlOccupancy,
       );
 
@@ -355,61 +683,24 @@ export function buildGroupTemplates(snapshot, registry, issues) {
 }
 
 export function instantiateGroupTemplate(instanceNode, template) {
-  const nodeIdMap = new Map();
-  const nodeIds = [];
-
-  for (const nodeEntry of template.nodes) {
-    const compiledNodeId = createGroupNodeId(instanceNode.id, nodeEntry.sourceNode.id);
-    nodeIdMap.set(nodeEntry.sourceNode.id, compiledNodeId);
-    nodeIds.push(compiledNodeId);
-  }
-
-  const nodes = template.nodes.map((nodeEntry) => ({
-    id: nodeIdMap.get(nodeEntry.sourceNode.id),
-    sourceId: nodeEntry.sourceNode.id,
-    sourceNode: cloneNodeRecord(nodeEntry.sourceNode),
-    shape: nodeEntry.shape,
-    groupInstanceId: instanceNode.id,
-    groupId: template.groupId,
-  }));
-
-  const edges = template.edges.map((edgeEntry) => ({
-    id: createGroupEdgeId(instanceNode.id, edgeEntry.sourceEdge.id),
-    sourceId: edgeEntry.sourceEdge.id,
-    delaySourceId: edgeEntry.sourceEdge.id,
-    from: {
-      nodeId: nodeIdMap.get(edgeEntry.normalizedEdge.from.nodeId),
-      portSlot: edgeEntry.normalizedEdge.from.portSlot,
-    },
-    to: {
-      nodeId: nodeIdMap.get(edgeEntry.normalizedEdge.to.nodeId),
-      portSlot: edgeEntry.normalizedEdge.to.portSlot,
-    },
-    role: edgeEntry.role,
-    groupInstanceId: instanceNode.id,
-    groupId: template.groupId,
-  }));
+  const expansion = instantiateTemplateEntries(instanceNode.id, template, {
+    includeInstanceMeta: true,
+  });
 
   return {
-    nodes,
-    edges,
-    nodeIdMap,
+    nodes: expansion.nodes,
+    edges: expansion.edges,
+    nodeIdMap: expansion.nodeIdMap,
     meta: {
-      nodeIds,
-      externalInputs: template.externalInputs.map((mapping) => ({
+      nodeIds: expansion.meta.nodeIds,
+      edgeIds: expansion.meta.edgeIds,
+      externalInputs: expansion.meta.externalInputs,
+      externalOutputs: expansion.meta.externalOutputs,
+      controls: expansion.meta.controls.map((mapping) => ({
         groupPortSlot: mapping.groupPortSlot,
-        nodeId: nodeIdMap.get(mapping.nodeId),
+        nodeId: mapping.nodeId,
+        controlSlot: mapping.controlSlot,
         portSlot: mapping.portSlot,
-      })),
-      externalOutputs: template.externalOutputs.map((mapping) => ({
-        groupPortSlot: mapping.groupPortSlot,
-        nodeId: nodeIdMap.get(mapping.nodeId),
-        portSlot: mapping.portSlot,
-      })),
-      controls: template.controls.map((mapping) => ({
-        groupPortSlot: mapping.groupPortSlot,
-        nodeId: nodeIdMap.get(mapping.nodeId),
-        paramKey: mapping.paramKey,
       })),
     },
   };

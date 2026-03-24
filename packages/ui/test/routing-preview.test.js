@@ -8,6 +8,7 @@ import { routeEdge, routeGraph } from "@ping/core";
 import {
   DEFAULT_UI_CONFIG,
   createPreviewEdgeRoutes,
+  createPreviewRenderState,
   renderSvgMarkup,
   worldToScreen,
 } from "../src/index.js";
@@ -253,4 +254,49 @@ test("createPreviewEdgeRoutes reroutes unrelated edges only when the moved node 
   );
 
   assert.deepEqual([...previewRoutes.keys()], ["edge-a"]);
+});
+
+test("createPreviewRenderState hides thumbs on every preview-rerouted edge", () => {
+  const snapshot = createMultiEdgeSnapshot();
+  const routes = routeGraph(snapshot, TEST_REGISTRY);
+  const previewState = {
+    drag: {
+      kind: "node",
+      nodeIds: ["node-mover"],
+      currentPositions: {
+        "node-mover": { x: 5, y: -1 },
+      },
+    },
+    nodePositionOverrides: new Map(),
+  };
+
+  const previewRenderState = createPreviewRenderState(
+    snapshot,
+    routes,
+    TEST_REGISTRY,
+    previewState,
+    DEFAULT_UI_CONFIG,
+  );
+
+  assert.deepEqual([...previewRenderState.previewEdgeRoutes.keys()], ["edge-a"]);
+  assert.deepEqual([...previewRenderState.hiddenThumbEdgeIds], ["edge-a"]);
+});
+
+test("renderSvgMarkup hides thumbs on unrelated edges when they are preview-rerouted", () => {
+  const snapshot = createMultiEdgeSnapshot();
+  const routes = routeGraph(snapshot, TEST_REGISTRY);
+  const markup = renderSvgMarkup({
+    ...createBaseRenderArgs(snapshot, routes),
+    thumbs: [{ edgeId: "edge-a", progress: 0.5, speed: 1, emitTick: 0 }],
+    drag: {
+      kind: "node",
+      nodeIds: ["node-mover"],
+      currentPositions: {
+        "node-mover": { x: 5, y: -1 },
+      },
+    },
+  });
+  const dom = new JSDOM(`<div id="root">${markup}</div>`);
+
+  assert.equal(dom.window.document.querySelector('[data-testid="thumb-0"]'), null);
 });

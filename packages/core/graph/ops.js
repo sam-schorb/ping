@@ -1,3 +1,9 @@
+import { computeGroupDslSemanticHash } from "../dsl/hash.js";
+import {
+  createCodeNodeBackingGroup,
+  normalizeCodeNodeGroupRef,
+} from "./code-node.js";
+import { CODE_NODE_TYPE } from "./constants.js";
 import { isGroupReferenced } from "./grouping.js";
 import {
   MODEL_ERROR_CODES,
@@ -53,6 +59,74 @@ function removeEdgesForNode(snapshot, nodeId) {
   );
 }
 
+function cloneDslMetadata(dsl) {
+  return dsl ? { ...dsl } : undefined;
+}
+
+function finalizeGroupDslMetadata(nextGroup, previousGroup, getNodeDefinition, groups) {
+  const nextDsl = cloneDslMetadata(nextGroup.dsl);
+  const previousDsl = cloneDslMetadata(previousGroup?.dsl);
+
+  if (!nextDsl && !previousDsl) {
+    return { group: nextGroup };
+  }
+
+  const hashResult = computeGroupDslSemanticHash(
+    nextGroup,
+    { getNodeDefinition },
+    { groups },
+  );
+
+  if (!hashResult.ok) {
+    return {
+      issue: createModelIssue(
+        MODEL_ERROR_CODES.INVALID_OPERATION,
+        hashResult.errors?.[0]?.message ??
+          `Group "${nextGroup.id}" DSL metadata could not be synchronized.`,
+        nextGroup.id,
+      ),
+    };
+  }
+
+  const currentHash = hashResult.hash;
+
+  if (nextDsl) {
+    const lastAppliedSemanticHash =
+      nextDsl.lastAppliedSemanticHash && nextDsl.lastAppliedSemanticHash.length > 0
+        ? nextDsl.lastAppliedSemanticHash
+        : currentHash;
+
+    return {
+      group: {
+        ...nextGroup,
+        dsl: {
+          ...nextDsl,
+          lastAppliedSemanticHash,
+          syncStatus:
+            lastAppliedSemanticHash === currentHash ? "in-sync" : "stale",
+        },
+      },
+    };
+  }
+
+  if (previousDsl) {
+    return {
+      group: {
+        ...nextGroup,
+        dsl: {
+          ...previousDsl,
+          syncStatus:
+            previousDsl.lastAppliedSemanticHash === currentHash
+              ? "in-sync"
+              : "stale",
+        },
+      },
+    };
+  }
+
+  return { group: nextGroup };
+}
+
 export function applyGraphOp(
   snapshot,
   op,
@@ -80,10 +154,71 @@ export function applyGraphOp(
         };
       }
 
+      let rawNode = payload.node;
+      let nextGroups = snapshot.groups;
+
+      if (rawNode?.type === CODE_NODE_TYPE) {
+        const normalizedGroupRef = normalizeCodeNodeGroupRef(
+          rawNode.id,
+          rawNode.groupRef,
+        );
+
+        if (normalizedGroupRef.issue) {
+          return {
+            error: createGraphOpError(normalizedGroupRef.issue, opIndex, opType),
+          };
+        }
+
+        const existingOwner = snapshot.nodes.find(
+          (node) => node.groupRef === normalizedGroupRef.groupRef,
+        );
+
+        if (existingOwner) {
+          return {
+            error: createGraphOpError(
+              createModelIssue(
+                MODEL_ERROR_CODES.GROUP_REF_INVALID,
+                `Code node "${rawNode.id}" cannot reuse private backing group "${normalizedGroupRef.groupRef}" already referenced by node "${existingOwner.id}".`,
+                rawNode.id,
+              ),
+              opIndex,
+              opType,
+            ),
+          };
+        }
+
+        rawNode = {
+          ...rawNode,
+          groupRef: normalizedGroupRef.groupRef,
+        };
+
+        if (!snapshot.groups?.[normalizedGroupRef.groupRef]) {
+          const createdBackingGroup = createCodeNodeBackingGroup(
+            rawNode.id,
+            context.getNodeDefinition,
+          );
+
+          if (createdBackingGroup.issue) {
+            return {
+              error: createGraphOpError(
+                createdBackingGroup.issue,
+                opIndex,
+                opType,
+              ),
+            };
+          }
+
+          nextGroups = {
+            ...(snapshot.groups ?? {}),
+            [createdBackingGroup.group.id]: createdBackingGroup.group,
+          };
+        }
+      }
+
       const normalized = normalizeNodeRecord(
-        payload.node,
+        rawNode,
         context.getNodeDefinition,
-        snapshot.groups,
+        nextGroups,
         { source: "op" },
       );
 
@@ -91,6 +226,10 @@ export function applyGraphOp(
         return {
           error: createGraphOpError(normalized.issue, opIndex, opType),
         };
+      }
+
+      if (nextGroups !== snapshot.groups) {
+        snapshot.groups = nextGroups;
       }
 
       snapshot.nodes.push(normalized.node);
@@ -125,8 +264,20 @@ export function applyGraphOp(
         };
       }
 
-      snapshot.nodes.splice(nodeIndex, 1);
+      const [removedNode] = snapshot.nodes.splice(nodeIndex, 1);
       removeEdgesForNode(snapshot, payload.id);
+
+      if (
+        removedNode?.type === CODE_NODE_TYPE &&
+        typeof removedNode.groupRef === "string" &&
+        snapshot.groups?.[removedNode.groupRef] &&
+        !isGroupReferenced(snapshot.nodes, removedNode.groupRef)
+      ) {
+        const nextGroups = { ...snapshot.groups };
+        delete nextGroups[removedNode.groupRef];
+        snapshot.groups =
+          Object.keys(nextGroups).length > 0 ? nextGroups : undefined;
+      }
 
       return { changed: true };
     }
@@ -582,6 +733,11 @@ export function applyGraphOp(
       const normalized = normalizeGroupDefinition(
         payload.group,
         context.getNodeDefinition,
+        {
+          source: "op",
+          groups: snapshot.groups,
+          validateGroupRef: true,
+        },
       );
 
       if (normalized.issue) {
@@ -604,10 +760,43 @@ export function applyGraphOp(
         };
       }
 
-      snapshot.groups = {
+      const groups = {
         ...(snapshot.groups ?? {}),
         [normalized.group.id]: normalized.group,
       };
+      const finalized = finalizeGroupDslMetadata(
+        normalized.group,
+        null,
+        context.getNodeDefinition,
+        groups,
+      );
+
+      if (finalized.issue) {
+        return {
+          error: createGraphOpError(finalized.issue, opIndex, opType),
+        };
+      }
+
+      const normalizedSnapshot = normalizeGraphSnapshot(
+        {
+          nodes: snapshot.nodes,
+          edges: snapshot.edges,
+          groups: {
+            ...(snapshot.groups ?? {}),
+            [normalized.group.id]: finalized.group,
+          },
+        },
+        context.getNodeDefinition,
+        { source: "load" },
+      );
+
+      if (normalizedSnapshot.issue) {
+        return {
+          error: createGraphOpError(normalizedSnapshot.issue, opIndex, opType),
+        };
+      }
+
+      snapshot.groups = normalizedSnapshot.snapshot.groups;
 
       return { changed: true };
     }
@@ -626,6 +815,14 @@ export function applyGraphOp(
       const normalized = normalizeGroupDefinition(
         payload.group,
         context.getNodeDefinition,
+        {
+          source: "op",
+          groups: {
+            ...(snapshot.groups ?? {}),
+            ...(payload.group?.id ? { [payload.group.id]: payload.group } : {}),
+          },
+          validateGroupRef: true,
+        },
       );
 
       if (normalized.issue) {
@@ -648,10 +845,43 @@ export function applyGraphOp(
         };
       }
 
-      snapshot.groups = {
+      const groups = {
         ...(snapshot.groups ?? {}),
         [normalized.group.id]: normalized.group,
       };
+      const finalized = finalizeGroupDslMetadata(
+        normalized.group,
+        snapshot.groups?.[normalized.group.id],
+        context.getNodeDefinition,
+        groups,
+      );
+
+      if (finalized.issue) {
+        return {
+          error: createGraphOpError(finalized.issue, opIndex, opType),
+        };
+      }
+
+      const normalizedSnapshot = normalizeGraphSnapshot(
+        {
+          nodes: snapshot.nodes,
+          edges: snapshot.edges,
+          groups: {
+            ...(snapshot.groups ?? {}),
+            [normalized.group.id]: finalized.group,
+          },
+        },
+        context.getNodeDefinition,
+        { source: "load" },
+      );
+
+      if (normalizedSnapshot.issue) {
+        return {
+          error: createGraphOpError(normalizedSnapshot.issue, opIndex, opType),
+        };
+      }
+
+      snapshot.groups = normalizedSnapshot.snapshot.groups;
 
       return { changed: true };
     }

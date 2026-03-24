@@ -5,10 +5,18 @@ import {
   CURRENT_SCHEMA_VERSION,
   DEFAULT_TEMPO_BPM,
   createDefaultSampleSlots,
+  getLayout,
+  getNodeDefinition,
+  lowerGroupDsl,
   parseProject,
   serialiseProject,
 } from "../src/index.js";
 import { loadSerialisationFixtureJSON } from "./helpers/serialisation-fixtures.js";
+
+const registry = {
+  getNodeDefinition,
+  getLayout,
+};
 
 test("valid fixtures parse and serialise into stable canonical project JSON", async () => {
   const fixtureNames = ["valid-min.json", "valid-groups.json", "valid-slots.json"];
@@ -55,6 +63,35 @@ test("group serialisation fills and preserves preserveInternalCableDelays", asyn
   assert.equal(parsed.ok, true);
   assert.equal(parsed.project.graph.groups["group-a"].preserveInternalCableDelays, false);
   assert.equal(canonical.graph.groups["group-a"].preserveInternalCableDelays, false);
+});
+
+test("group serialisation preserves exact DSL metadata and source text", () => {
+  const source = "// $0 = trigger\r\n\r\n$0.every(2).outlet(0)\r\n";
+  const lowered = lowerGroupDsl(source, registry, {
+    groupId: "group-dsl-metadata",
+    groupName: "Group DSL Metadata",
+  });
+
+  assert.equal(lowered.ok, true);
+
+  const canonical = serialiseProject({
+    graph: {
+      nodes: [],
+      edges: [],
+      groups: {
+        [lowered.group.id]: lowered.group,
+      },
+    },
+    samples: createDefaultSampleSlots(),
+    settings: { tempo: DEFAULT_TEMPO_BPM },
+  });
+  const reparsed = parseProject(canonical);
+
+  assert.equal(reparsed.ok, true);
+  assert.deepEqual(
+    reparsed.project.graph.groups[lowered.group.id].dsl,
+    lowered.group.dsl,
+  );
 });
 
 test("default sample slots follow the bundled public kit order", () => {

@@ -1,4 +1,9 @@
-import { buildOrthogonalRoute, getNodeRoutingBounds, getPortSideSlot } from "@ping/core";
+import {
+  buildOrthogonalRoute,
+  getNodeRoutingBounds,
+  getPortSideSlot,
+  isGroupBackedNodeType,
+} from "@ping/core";
 
 const ROTATIONS = [0, 90, 180, 270];
 
@@ -22,7 +27,7 @@ export function getResolvedNodeDefinition(snapshot, node, registry) {
   const baseDefinition = registry.getNodeDefinition(node.type);
 
   if (baseDefinition) {
-    if (node.type !== "group") {
+    if (!isGroupBackedNodeType(node.type)) {
       return baseDefinition;
     }
 
@@ -30,10 +35,11 @@ export function getResolvedNodeDefinition(snapshot, node, registry) {
     const inputs = safeArray(group?.inputs).length;
     const outputs = safeArray(group?.outputs).length;
     const controlPorts = safeArray(group?.controls).length;
+    const groupLabel = node.type === "group" ? group?.name : undefined;
 
     return {
       ...baseDefinition,
-      label: node.name || group?.name || baseDefinition.label,
+      label: node.name || groupLabel || baseDefinition.label,
       layout: "custom",
       inputs,
       outputs,

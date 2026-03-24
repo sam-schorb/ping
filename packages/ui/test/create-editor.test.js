@@ -738,7 +738,35 @@ test("shift-click grouping includes the original selected node", async () => {
 
   try {
     const harness = createEditorHarness({
-      snapshot: createGroupableSnapshot(),
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
+          { id: "node-d", type: "add", pos: { x: 10, y: 2 }, rot: 0, params: { param: 2 } },
+          { id: "node-c", type: "out", pos: { x: 14, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-a",
+            from: { nodeId: "node-a", portSlot: 0 },
+            to: { nodeId: "node-b", portSlot: 0 },
+            manualCorners: [],
+          },
+          {
+            id: "edge-b",
+            from: { nodeId: "node-b", portSlot: 0 },
+            to: { nodeId: "node-d", portSlot: 0 },
+            manualCorners: [],
+          },
+          {
+            id: "edge-c",
+            from: { nodeId: "node-d", portSlot: 0 },
+            to: { nodeId: "node-c", portSlot: 0 },
+            manualCorners: [],
+          },
+        ],
+        groups: {},
+      },
     });
     await harness.flush();
 
@@ -805,6 +833,80 @@ test("group dialog close actions remove the overlay", async () => {
 
     assert.equal(harness.query("group-config"), null);
     assert.equal(harness.query("group-confirm"), null);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("group dialog blocks already-driven control inputs and can expose them instead with confirmation", async () => {
+  const dom = setupDom();
+
+  try {
+    const confirmMessages = [];
+    dom.window.confirm = (message) => {
+      confirmMessages.push(message);
+      return true;
+    };
+
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
+          { id: "node-c", type: "out", pos: { x: 10, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-control",
+            from: { nodeId: "node-a", portSlot: 0 },
+            to: { nodeId: "node-b", portSlot: 1 },
+            manualCorners: [],
+          },
+          {
+            id: "edge-b",
+            from: { nodeId: "node-b", portSlot: 0 },
+            to: { nodeId: "node-c", portSlot: 0 },
+            manualCorners: [],
+          },
+        ],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    await openGroupDialogForConnectedPair(harness);
+    assert.match(harness.query("group-controls-unavailable-0").textContent, /already driven internally/i);
+
+    harness.click(
+      harness.container.querySelector(
+        '[data-action="group-expose-instead"][data-group-kind="controls"][data-group-id="control:node-b:slot:0"]',
+      ),
+    );
+    await harness.flush();
+
+    assert.ok(confirmMessages.length >= 1);
+    assert.ok(
+      confirmMessages.some((message) => /disconnect the internal control cable/i.test(message)),
+    );
+    assert.equal(harness.query("group-controls-unavailable-0"), null);
+
+    harness.click(harness.query("group-confirm"));
+    await harness.flush();
+
+    const groupId = Object.keys(harness.snapshot.groups)[0];
+    assert.ok(groupId);
+    assert.equal(
+      harness.snapshot.groups[groupId].controls.some(
+        (entry) => entry.nodeId === "node-b" && entry.controlSlot === 0,
+      ),
+      true,
+    );
+    assert.equal(
+      harness.snapshot.groups[groupId].graph.edges.some((edge) => edge.id === "edge-control"),
+      false,
+    );
 
     harness.unmount();
   } finally {
@@ -2552,6 +2654,79 @@ test("editor hides thumbs on edges connected to a dragged node until the drag co
   }
 });
 
+test("editor also hides thumbs on unrelated edges that are preview-rerouted around a moved node", async () => {
+  const dom = setupDom();
+
+  try {
+    const runtime = createRuntimeStub();
+    runtime.thumbs = [{ edgeId: "edge-a", progress: 0.5, speed: 1, emitTick: 0 }];
+
+    const harness = createEditorHarness({
+      runtime,
+      snapshot: {
+        nodes: [
+          { id: "node-a-in", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: { param: 1 } },
+          { id: "node-a-out", type: "out", pos: { x: 12, y: 0 }, rot: 0, params: {} },
+          { id: "node-b-in", type: "pulse", pos: { x: 0, y: 10 }, rot: 0, params: { param: 1 } },
+          { id: "node-b-out", type: "out", pos: { x: 12, y: 10 }, rot: 0, params: {} },
+          { id: "node-mover", type: "set", pos: { x: 18, y: 4 }, rot: 0, params: { param: 3 } },
+        ],
+        edges: [
+          {
+            id: "edge-a",
+            from: { nodeId: "node-a-in", portSlot: 0 },
+            to: { nodeId: "node-a-out", portSlot: 0 },
+            manualCorners: [],
+          },
+          {
+            id: "edge-b",
+            from: { nodeId: "node-b-in", portSlot: 0 },
+            to: { nodeId: "node-b-out", portSlot: 0 },
+            manualCorners: [],
+          },
+        ],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    assert.ok(harness.query("thumb-0"));
+
+    const viewport = harness.query("editor-viewport");
+    const mover = harness.query("node-node-mover");
+    const before = getNodeScreenBox(mover);
+
+    harness.pointerDown(mover, {
+      clientX: before.x + before.width / 2,
+      clientY: before.y + before.height / 2,
+    });
+    harness.pointerMove(viewport, {
+      clientX: before.x + before.width / 2 - 312,
+      clientY: before.y + before.height / 2 - 120,
+    });
+    await harness.flush();
+
+    assert.equal(harness.container.querySelector('[data-testid="thumb-0"]'), null);
+
+    runtime.thumbs = [{ edgeId: "edge-a", progress: 0.25, speed: 1, emitTick: 1 }];
+    await harness.flush();
+
+    assert.equal(harness.container.querySelector('[data-testid="thumb-0"]'), null);
+
+    harness.pointerUp({
+      clientX: before.x + before.width / 2 - 312,
+      clientY: before.y + before.height / 2 - 120,
+    });
+    await harness.flush();
+
+    assert.ok(harness.query("thumb-0"));
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("diagnostic focus selects the target without recentering the camera", async () => {
   const dom = setupDom();
 
@@ -2640,6 +2815,85 @@ test("canvas pointer focus falls back cleanly when focus options are unsupported
     harness.pointerDown(viewport, { clientX: 320, clientY: 240 });
 
     assert.deepEqual(focusCalls, [{ preventScroll: true }, undefined]);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("editor renders nested group snapshots without routing or build diagnostics", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-group", type: "group", groupRef: "group-b", pos: { x: 6, y: 2 }, rot: 0, params: {} },
+          { id: "node-c", type: "out", pos: { x: 12, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-c",
+            from: { nodeId: "node-group", portSlot: 0 },
+            to: { nodeId: "node-c", portSlot: 0 },
+            manualCorners: [],
+          },
+        ],
+        groups: {
+          "group-a": {
+            id: "group-a",
+            name: "Group A",
+            graph: {
+              nodes: [
+                { id: "inner-pulse", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: { param: 1 } },
+                { id: "inner-add", type: "add", pos: { x: 4, y: 0 }, rot: 0, params: { param: 2 } },
+                { id: "inner-input", type: "add", pos: { x: 4, y: 2 }, rot: 0, params: { param: 2 } },
+              ],
+              edges: [
+                {
+                  id: "child-edge",
+                  from: { nodeId: "inner-pulse", portSlot: 0 },
+                  to: { nodeId: "inner-add", portSlot: 0 },
+                  manualCorners: [],
+                },
+              ],
+            },
+            inputs: [{ nodeId: "inner-input", portSlot: 0 }],
+            outputs: [{ nodeId: "inner-add", portSlot: 0 }],
+            controls: [],
+          },
+          "group-b": {
+            id: "group-b",
+            name: "Group B",
+            graph: {
+              nodes: [
+                { id: "parent-pulse", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: { param: 1 } },
+                { id: "child-group", type: "group", groupRef: "group-a", pos: { x: 4, y: 0 }, rot: 0, params: {} },
+              ],
+              edges: [
+                {
+                  id: "parent-edge",
+                  from: { nodeId: "parent-pulse", portSlot: 0 },
+                  to: { nodeId: "child-group", portSlot: 0 },
+                  manualCorners: [],
+                },
+              ],
+            },
+            inputs: [],
+            outputs: [{ nodeId: "child-group", portSlot: 0 }],
+            controls: [],
+          },
+        },
+      },
+    });
+    await harness.flush();
+    assert.ok(harness.query("node-node-group"));
+
+    harness.click(harness.container.querySelector('[data-tab="console"]'));
+    await harness.flush();
+    assert.equal(harness.container.querySelector('[data-testid="diagnostic-0"]'), null);
+    assert.match(harness.container.textContent, /No diagnostics\./);
 
     harness.unmount();
   } finally {
@@ -2985,6 +3239,88 @@ test("pulsed nodes scale the body chrome without moving ports and keep the norma
 
     const zoomedOutBodyGroup = harness.query("node-node-a").querySelector(".ping-editor__node-body-group");
     assert.ok(Number(zoomedOutBodyGroup.getAttribute("data-pulse-scale")) > 1.04);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("oversized grouped nodes cap pulse amplitude to the same absolute expansion as a 3x3 node", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          {
+            id: "node-group",
+            type: "group",
+            groupRef: "group-large",
+            pos: { x: 8, y: 2 },
+            rot: 0,
+            params: {},
+          },
+        ],
+        edges: [],
+        groups: {
+          "group-large": {
+            id: "group-large",
+            name: "Large Group",
+            graph: {
+              nodes: [
+                { id: "node-demux", type: "demux", pos: { x: 1, y: 1 }, rot: 0, params: {} },
+                { id: "node-mux", type: "mux", pos: { x: 5, y: 1 }, rot: 0, params: {} },
+              ],
+              edges: [],
+            },
+            inputs: [
+              { nodeId: "node-demux", portSlot: 0 },
+              { nodeId: "node-demux", portSlot: 1 },
+              { nodeId: "node-demux", portSlot: 2 },
+              { nodeId: "node-demux", portSlot: 3 },
+              { nodeId: "node-demux", portSlot: 4 },
+              { nodeId: "node-demux", portSlot: 5 },
+            ],
+            outputs: [
+              { nodeId: "node-mux", portSlot: 0 },
+              { nodeId: "node-mux", portSlot: 1 },
+              { nodeId: "node-mux", portSlot: 2 },
+              { nodeId: "node-mux", portSlot: 3 },
+              { nodeId: "node-mux", portSlot: 4 },
+              { nodeId: "node-mux", portSlot: 5 },
+            ],
+            controls: [],
+            preserveInternalCableDelays: false,
+          },
+        },
+      },
+    });
+    await harness.flush();
+
+    harness.runtime.nodePulses = [
+      { nodeId: "node-a", progress: 0.5, receivedTick: 1 },
+      { nodeId: "node-group", progress: 0.5, receivedTick: 1 },
+    ];
+    await harness.flush();
+
+    const smallScale = Number(
+      harness
+        .query("node-node-a")
+        .querySelector(".ping-editor__node-body-group")
+        .getAttribute("data-pulse-scale"),
+    );
+    const largeScale = Number(
+      harness
+        .query("node-node-group")
+        .querySelector(".ping-editor__node-body-group")
+        .getAttribute("data-pulse-scale"),
+    );
+
+    assert.equal(smallScale, 1.04);
+    assert.equal(largeScale, 1.0171);
+    assert.ok(largeScale < smallScale);
 
     harness.unmount();
   } finally {

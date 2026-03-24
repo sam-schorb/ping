@@ -17,12 +17,18 @@ test("legacy top-level groups migrate into graph.groups with a migration warning
   assert.equal(parsed.warnings.length, 1);
   assert.equal(parsed.warnings[0].code, "SERIAL_VERSION_MIGRATED");
   assert.deepEqual(Object.keys(parsed.project.graph.groups), ["group-a"]);
+  assert.deepEqual(parsed.project.graph.groups["group-a"].controls, [
+    { nodeId: "inner-pulse", controlSlot: 0 },
+  ]);
 
   const canonical = serialiseProject(parsed.project);
 
   assert.equal(canonical.schemaVersion, CURRENT_SCHEMA_VERSION);
   assert.equal("groups" in canonical, false);
   assert.ok(canonical.graph.groups["group-a"]);
+  assert.deepEqual(canonical.graph.groups["group-a"].controls, [
+    { nodeId: "inner-pulse", controlSlot: 0 },
+  ]);
 });
 
 test("missing schemaVersion without top-level groups still migrates to the current schema", () => {
