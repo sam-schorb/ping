@@ -56,19 +56,6 @@ export function setSignal(ctx) {
   };
 }
 
-export function createConstantSignal(constantValue) {
-  return function constantSignal(ctx) {
-    return {
-      outputs: [
-        createOutput(constantValue, {
-          speed: ctx.pulse.speed,
-          params: ctx.pulse.params,
-        }),
-      ],
-    };
-  };
-}
-
 export function speedSignal(ctx) {
   return {
     outputs: [createOutput(ctx.pulse.value, { speed: ctx.param })],

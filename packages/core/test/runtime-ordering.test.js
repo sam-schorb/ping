@@ -186,6 +186,15 @@ test("control changes on pulse nodes snap the next pulse to the future rate latt
     createCompiledGraph({
       nodes: [
         {
+          id: "node-rate-source",
+          type: "pulse",
+          param: 1,
+          state: {},
+          inputs: 1,
+          outputs: 1,
+          controlPorts: 1,
+        },
+        {
           id: "node-pulse",
           type: "pulse",
           param: 1,
@@ -196,12 +205,12 @@ test("control changes on pulse nodes snap the next pulse to the future rate latt
         },
         {
           id: "node-rate",
-          type: "const3",
-          param: 1,
+          type: "set",
+          param: 3,
           state: {},
           inputs: 1,
           outputs: 1,
-          controlPorts: 0,
+          controlPorts: 1,
         },
         {
           id: "node-output",
@@ -214,6 +223,13 @@ test("control changes on pulse nodes snap the next pulse to the future rate latt
         },
       ],
       edges: [
+        {
+          id: "edge-rate-source",
+          from: { nodeId: "node-rate-source", portSlot: 0 },
+          to: { nodeId: "node-rate", portSlot: 0 },
+          role: "signal",
+          delay: 0,
+        },
         {
           id: "edge-out",
           from: { nodeId: "node-pulse", portSlot: 0 },
@@ -282,12 +298,12 @@ test("control edges targeting real control ports invoke onControl handlers", () 
       nodes: [
         {
           id: "node-control",
-          type: "const7",
+          type: "pulse",
           param: 1,
           state: {},
           inputs: 1,
           outputs: 1,
-          controlPorts: 0,
+          controlPorts: 1,
         },
         {
           id: "node-pulse",
@@ -349,202 +365,4 @@ test("control edges targeting real control ports invoke onControl handlers", () 
     runtime.graph.nodes[runtime.graph.nodeIndex.get("node-block")].state,
     { allow: false },
   );
-});
-
-test("constant nodes preserve effect params through to output events", () => {
-  const runtime = createRuntime(
-    createCompiledGraph({
-      nodes: [
-        {
-          id: "node-pulse",
-          type: "pulse",
-          param: 1,
-          state: {},
-          inputs: 1,
-          outputs: 1,
-          controlPorts: 1,
-        },
-        {
-          id: "node-crush",
-          type: "crush",
-          param: 3,
-          state: {},
-          inputs: 1,
-          outputs: 1,
-          controlPorts: 1,
-        },
-        {
-          id: "node-const",
-          type: "const3",
-          param: 1,
-          state: {},
-          inputs: 1,
-          outputs: 1,
-          controlPorts: 0,
-        },
-        {
-          id: "node-output",
-          type: "out",
-          param: 1,
-          state: {},
-          inputs: 1,
-          outputs: 0,
-          controlPorts: 0,
-        },
-      ],
-      edges: [
-        {
-          id: "edge-pulse-crush",
-          from: { nodeId: "node-pulse", portSlot: 0 },
-          to: { nodeId: "node-crush", portSlot: 0 },
-          role: "signal",
-          delay: 0.25,
-        },
-        {
-          id: "edge-crush-const",
-          from: { nodeId: "node-crush", portSlot: 0 },
-          to: { nodeId: "node-const", portSlot: 0 },
-          role: "signal",
-          delay: 0.25,
-        },
-        {
-          id: "edge-const-output",
-          from: { nodeId: "node-const", portSlot: 0 },
-          to: { nodeId: "node-output", portSlot: 0 },
-          role: "signal",
-          delay: 0.25,
-        },
-      ],
-    }),
-  );
-
-  assert.deepEqual(runtime.queryWindow(0, 1), [
-    {
-      tick: 0.75,
-      value: 3,
-      params: {
-        crush: 3,
-      },
-      nodeId: "node-output",
-      edgeId: "edge-const-output",
-    },
-  ]);
-});
-
-test("bare constant nodes seed control-only branches so effect params initialize", () => {
-  const runtime = createRuntime(
-    createCompiledGraph({
-      nodes: [
-        {
-          id: "node-pulse",
-          type: "pulse",
-          param: 1,
-          state: {},
-          inputs: 1,
-          outputs: 1,
-          controlPorts: 1,
-        },
-        {
-          id: "node-const",
-          type: "const3",
-          param: 1,
-          state: {},
-          inputs: 1,
-          outputs: 1,
-          controlPorts: 0,
-        },
-        {
-          id: "node-crush",
-          type: "crush",
-          param: 1,
-          state: {},
-          inputs: 1,
-          outputs: 1,
-          controlPorts: 1,
-        },
-        {
-          id: "node-output",
-          type: "out",
-          param: 1,
-          state: {},
-          inputs: 1,
-          outputs: 0,
-          controlPorts: 0,
-        },
-      ],
-      edges: [
-        {
-          id: "edge-const-crush",
-          from: { nodeId: "node-const", portSlot: 0 },
-          to: { nodeId: "node-crush", portSlot: 1 },
-          role: "control",
-          delay: 0.25,
-        },
-        {
-          id: "edge-pulse-crush",
-          from: { nodeId: "node-pulse", portSlot: 0 },
-          to: { nodeId: "node-crush", portSlot: 0 },
-          role: "signal",
-          delay: 0.5,
-        },
-        {
-          id: "edge-crush-output",
-          from: { nodeId: "node-crush", portSlot: 0 },
-          to: { nodeId: "node-output", portSlot: 0 },
-          role: "signal",
-          delay: 0.25,
-        },
-      ],
-    }),
-  );
-
-  assert.deepEqual(runtime.queryWindow(0, 1), [
-    {
-      tick: 0.75,
-      value: 1,
-      params: {
-        crush: 3,
-      },
-      nodeId: "node-output",
-      edgeId: "edge-crush-output",
-    },
-  ]);
-});
-
-test("bare constant nodes do not auto-emit onto signal outputs", () => {
-  const runtime = createRuntime(
-    createCompiledGraph({
-      nodes: [
-        {
-          id: "node-const",
-          type: "const3",
-          param: 1,
-          state: {},
-          inputs: 1,
-          outputs: 1,
-          controlPorts: 0,
-        },
-        {
-          id: "node-output",
-          type: "out",
-          param: 1,
-          state: {},
-          inputs: 1,
-          outputs: 0,
-          controlPorts: 0,
-        },
-      ],
-      edges: [
-        {
-          id: "edge-const-output",
-          from: { nodeId: "node-const", portSlot: 0 },
-          to: { nodeId: "node-output", portSlot: 0 },
-          role: "signal",
-          delay: 0.25,
-        },
-      ],
-    }),
-  );
-
-  assert.deepEqual(runtime.queryWindow(0, 1), []);
 });

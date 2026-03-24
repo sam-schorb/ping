@@ -2,7 +2,6 @@ import { clampDiscreteNodeValue } from "../nodes/behaviors/shared.js";
 import { createRuntimeWarning, RUNTIME_WARNING_CODES } from "./errors.js";
 import {
   cloneRuntimeState,
-  createInternalPulseSeedEvent,
   createInternalPulseSeedEventAtPhase,
   createOutputEvent,
   PULSE_SOURCE_PHASE_UNITS,
@@ -240,7 +239,6 @@ export class Runtime {
         this.protectedUntilTick,
         patch.addedNodes.map((node) => node.id),
       );
-      this.seedStaticControlConstants(this.protectedUntilTick, patch.addedNodes.map((node) => node.id));
     }
 
     this.metrics.queueSize = this.getQueueSize();
@@ -513,47 +511,8 @@ export class Runtime {
     this.enqueuePulseSeedEvent(nodeId, pulseUnits);
   }
 
-  seedStaticControlConstants(startTick, onlyNodeIds) {
-    const targetNodeIds = onlyNodeIds ? new Set(onlyNodeIds) : null;
-
-    for (const node of this.graph.nodes) {
-      if (!this.isStaticControlConstant(node, targetNodeIds)) {
-        continue;
-      }
-
-      this.enqueueEvent(createInternalPulseSeedEvent(node.id, startTick, this.nextSequence()));
-    }
-  }
-
   seedTickSources(startTick, onlyNodeIds) {
     this.seedPulseSources(startTick, onlyNodeIds);
-    this.seedStaticControlConstants(startTick, onlyNodeIds);
-  }
-
-  isStaticControlConstant(node, targetNodeIds) {
-    if (!node?.type?.startsWith?.("const")) {
-      return false;
-    }
-
-    if (targetNodeIds && !targetNodeIds.has(node.id)) {
-      return false;
-    }
-
-    const hasSignalInput = this.graph.edges.some(
-      (edge) => edge.to.nodeId === node.id && edge.to.portSlot === 0,
-    );
-
-    if (hasSignalInput) {
-      return false;
-    }
-
-    const outgoingEdges = this.outgoingEdgesByNodePort.get(`${node.id}:0`) ?? [];
-
-    if (outgoingEdges.length === 0) {
-      return false;
-    }
-
-    return outgoingEdges.every((edge) => edge.role === "control");
   }
 
   nextSequence() {

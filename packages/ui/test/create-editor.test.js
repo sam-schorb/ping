@@ -990,7 +990,7 @@ test("editor renders add-node categories as a fixed stacked header instead of a 
     const categories = harness.container.querySelector(".ping-editor__menu-categories");
     assert.equal(categories?.getAttribute("data-menu-category-layout"), "stacked");
     assert.equal(harness.container.querySelectorAll(".ping-editor__menu-category-row").length, 2);
-    assert.equal(harness.query("palette-menu-category-constants").textContent.trim(), "consts");
+    assert.equal(harness.container.querySelector('[data-menu-category-id="constants"]'), null);
     assert.equal(harness.query("palette-menu-category-modifiers").textContent.trim(), "mods");
 
     harness.click(harness.query("palette-menu-category-routing"));

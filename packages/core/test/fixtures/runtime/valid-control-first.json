@@ -11,12 +11,12 @@
     },
     {
       "id": "node-control-value",
-      "type": "const2",
-      "param": 1,
+      "type": "set",
+      "param": 2,
       "state": {},
       "inputs": 1,
       "outputs": 1,
-      "controlPorts": 0
+      "controlPorts": 1
     },
     {
       "id": "node-source",

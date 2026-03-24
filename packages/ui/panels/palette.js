@@ -13,7 +13,7 @@ function escapeHtml(value) {
 export const DEFAULT_PALETTE_MENU_CATEGORY_ID = "basic";
 
 const BASIC_MENU_TYPES = new Set(["pulse", "out", "mux", "every", "set"]);
-const CATEGORY_ORDER = ["Sources", "Sinks", "Routing", "Math", "Constants", "Modifiers", "State", "Logic"];
+const CATEGORY_ORDER = ["Sources", "Sinks", "Routing", "Math", "Modifiers", "State", "Logic"];
 const STACKED_CATEGORY_THRESHOLD = 5;
 
 function normalizeSearchText(value) {
@@ -33,10 +33,6 @@ function normalizeCategoryId(label) {
 
 function getCategoryDisplayLabel(category) {
   const normalized = String(category ?? "").trim().toLowerCase();
-
-  if (normalized === "constants") {
-    return "consts";
-  }
 
   if (normalized === "modifiers") {
     return "mods";

@@ -5,7 +5,6 @@ import {
   counterSignal,
   createBlockState,
   createComparisonSignal,
-  createConstantSignal,
   createCounterState,
   createEffectSignal,
   createEveryState,
@@ -34,7 +33,6 @@ const CATEGORY_COLORS = {
   Sinks: "#e9c46a",
   Routing: "#577590",
   Math: "#4d908e",
-  Constants: "#6d597a",
   Modifiers: "#f9844a",
   State: "#9c6644",
   Logic: "#277da1",
@@ -49,25 +47,6 @@ const NODE_TYPE_ALIASES = Object.freeze({
 
 function defineNode(definition) {
   return Object.freeze(definition);
-}
-
-function defineConstantNode(value) {
-  return defineNode({
-    type: `const${value}`,
-    label: `Const ${value}`,
-    description: `Overwrite the incoming value with the constant ${value}.`,
-    category: "Constants",
-    icon: `const${value}`,
-    color: CATEGORY_COLORS.Constants,
-    layout: "single-io",
-    inputs: 1,
-    outputs: 1,
-    controlPorts: 0,
-    hasParam: false,
-    defaultParam: 1,
-    onSignal: createConstantSignal(value),
-    paletteOrder: 100 + value,
-  });
 }
 
 function defineFilterNode({
@@ -251,7 +230,6 @@ export const NODE_REGISTRY = Object.freeze([
     onSignal: setSignal,
     paletteOrder: 90,
   }),
-  ...Array.from({ length: 8 }, (_, index) => defineConstantNode(index + 1)),
   defineNode({
     type: "speed",
     label: "Speed",

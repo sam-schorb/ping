@@ -55,33 +55,6 @@ test("switch control updates the selection and signal routing clamps to the sixt
   assert.deepEqual(signalResult.outputs, [{ value: 5, outPortIndex: 5 }]);
 });
 
-test("constant nodes overwrite value while preserving incoming speed and params", () => {
-  const node = getNodeDefinition("const3");
-  const result = node.onSignal(
-    createBehaviorContext({
-      pulse: {
-        value: 7,
-        speed: 6,
-        params: {
-          crush: 2,
-          hpf: 5,
-        },
-      },
-    }),
-  );
-
-  assert.deepEqual(result.outputs, [
-    {
-      value: 3,
-      speed: 6,
-      params: {
-        crush: 2,
-        hpf: 5,
-      },
-    },
-  ]);
-});
-
 test("speed overwrites pulse speed while preserving value", () => {
   const node = getNodeDefinition("speed");
   const result = node.onSignal(

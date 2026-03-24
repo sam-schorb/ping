@@ -22,11 +22,18 @@ function createSimpleGroupedProject() {
     graph: {
       nodes: [
         {
-          id: "node-control",
-          type: "const7",
-          pos: { x: 0, y: -2 },
+          id: "node-control-source",
+          type: "pulse",
+          pos: { x: -4, y: -2 },
           rot: 0,
           params: {},
+        },
+        {
+          id: "node-control",
+          type: "set",
+          pos: { x: 0, y: -2 },
+          rot: 0,
+          params: { param: 7 },
         },
         {
           id: "group-node",
@@ -45,6 +52,12 @@ function createSimpleGroupedProject() {
         },
       ],
       edges: [
+        {
+          id: "edge-control-source",
+          from: { nodeId: "node-control-source", portSlot: 0 },
+          to: { nodeId: "node-control", portSlot: 0 },
+          manualCorners: [],
+        },
         {
           id: "edge-control",
           from: { nodeId: "node-control", portSlot: 0 },
@@ -103,11 +116,18 @@ function createNestedGroupedProject() {
     graph: {
       nodes: [
         {
-          id: "node-control",
-          type: "const7",
-          pos: { x: 0, y: -2 },
+          id: "node-control-source",
+          type: "pulse",
+          pos: { x: -4, y: -2 },
           rot: 0,
           params: {},
+        },
+        {
+          id: "node-control",
+          type: "set",
+          pos: { x: 0, y: -2 },
+          rot: 0,
+          params: { param: 7 },
         },
         {
           id: "group-node",
@@ -126,6 +146,12 @@ function createNestedGroupedProject() {
         },
       ],
       edges: [
+        {
+          id: "edge-control-source",
+          from: { nodeId: "node-control-source", portSlot: 0 },
+          to: { nodeId: "node-control", portSlot: 0 },
+          manualCorners: [],
+        },
         {
           id: "edge-control",
           from: { nodeId: "node-control", portSlot: 0 },
@@ -225,6 +251,7 @@ test("phase 2 canonicalizes legacy simple grouped controls onto controlSlot and 
   assert.deepEqual(
     result.graph.nodes.map((node) => node.id),
     [
+      "node-control-source",
       "node-control",
       "group-node::node::inner-pulse",
       "group-node::node::inner-add",
@@ -278,6 +305,7 @@ test("phase 2 canonicalizes legacy nested grouped controls onto forwarded real c
   assert.deepEqual(
     result.graph.nodes.map((node) => node.id),
     [
+      "node-control-source",
       "node-control",
       "group-node::node::inner-group::node::inner-pulse",
       "group-node::node::inner-group::node::inner-add",
@@ -313,11 +341,18 @@ function createGroupedBlockProject() {
     graph: {
       nodes: [
         {
-          id: "node-control",
-          type: "const7",
-          pos: { x: 0, y: -2 },
+          id: "node-control-source",
+          type: "pulse",
+          pos: { x: -4, y: -4 },
           rot: 0,
           params: {},
+        },
+        {
+          id: "node-control",
+          type: "set",
+          pos: { x: 0, y: -4 },
+          rot: 0,
+          params: { param: 1 },
         },
         {
           id: "node-pulse",
@@ -343,6 +378,12 @@ function createGroupedBlockProject() {
         },
       ],
       edges: [
+        {
+          id: "edge-control-source",
+          from: { nodeId: "node-control-source", portSlot: 0 },
+          to: { nodeId: "node-control", portSlot: 0 },
+          manualCorners: [],
+        },
         {
           id: "edge-control",
           from: { nodeId: "node-control", portSlot: 0 },
@@ -409,7 +450,9 @@ test("phase 2 grouped control routing/build/runtime goes through real control in
 
   const runtime = createRuntime(built.graph);
 
-  assert.deepEqual(runtime.queryWindow(0, 6), []);
+  const outputs = runtime.queryWindow(0, 30);
+
+  assert.equal(outputs.length > 0, true);
   assert.deepEqual(
     runtime.graph.nodes[runtime.graph.nodeIndex.get("group-node::node::inner-block")].state,
     { allow: false },
