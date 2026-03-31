@@ -390,7 +390,7 @@ export const NODE_REGISTRY = Object.freeze([
   defineNode({
     type: "drop",
     label: "Drop",
-    description: "Drop every Nth pulse and pass the others through unchanged.",
+    description: "Drop every (N + 1)th pulse and pass the others through unchanged.",
     category: "State",
     icon: "drop",
     color: CATEGORY_COLORS.State,

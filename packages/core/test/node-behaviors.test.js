@@ -139,11 +139,15 @@ test("every maintains deterministic state progression and normalizes count when 
   assert.equal(result.state.count, 1);
 });
 
-test("drop maintains deterministic state progression and normalizes count when N shrinks", () => {
+test("drop uses an n-plus-one cadence and normalizes count when the effective period shrinks", () => {
   const node = getNodeDefinition("drop");
   let state = node.initState();
 
   let result = node.onSignal(createBehaviorContext({ param: 3, state }));
+  assert.deepEqual(result.outputs, [{ value: 4 }]);
+  state = result.state;
+
+  result = node.onSignal(createBehaviorContext({ param: 3, state }));
   assert.deepEqual(result.outputs, [{ value: 4 }]);
   state = result.state;
 
@@ -161,10 +165,14 @@ test("drop maintains deterministic state progression and normalizes count when N
       state: { count: 8 },
     }),
   );
-  assert.equal(result.outputs.length, 0);
-  assert.equal(result.state.count, 1);
+  assert.deepEqual(result.outputs, [{ value: 4 }]);
+  assert.equal(result.state.count, 4);
 
   result = node.onSignal(createBehaviorContext({ param: 1, state: node.initState() }));
+  assert.deepEqual(result.outputs, [{ value: 4 }]);
+  assert.equal(result.state.count, 2);
+
+  result = node.onSignal(createBehaviorContext({ param: 1, state: result.state }));
   assert.equal(result.outputs.length, 0);
   assert.equal(result.state.count, 1);
 });

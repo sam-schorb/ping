@@ -141,7 +141,7 @@ export function everySignal(ctx) {
 }
 
 export function dropSignal(ctx) {
-  const step = clampDiscreteNodeValue(ctx.param);
+  const step = clampDiscreteNodeValue(ctx.param) + 1;
   const count = normalizeSteppedCount(ctx.state?.count, step);
   const shouldDrop = count === step || count === 0;
   const nextCount = shouldDrop ? 1 : count + 1;
