@@ -190,7 +190,7 @@ function getSearchRank(item, query) {
   return Number.isFinite(bestRank) ? bestRank : null;
 }
 
-export function getPaletteMenuModel({ palette, groups, activeCategory, query = "" }) {
+export function getPaletteMenuModel({ palette, groups, activeCategory, query = "", activeItemId = null }) {
   const items = buildPaletteMenuEntries(palette, groups);
   const categories = buildPaletteMenuCategories(items);
   const activeCategoryId = categories.some((category) => category.id === activeCategory)
@@ -204,6 +204,8 @@ export function getPaletteMenuModel({ palette, groups, activeCategory, query = "
     label: category.label,
     count: category.items.length,
   }));
+  const resolveActiveItem = (visibleItems) =>
+    visibleItems.find((item) => item.id === activeItemId) ?? visibleItems[0] ?? null;
 
   if (isSearching) {
     const matchedItems = items
@@ -214,7 +216,7 @@ export function getPaletteMenuModel({ palette, groups, activeCategory, query = "
       .filter((entry) => entry.rank !== null)
       .sort((left, right) => left.rank - right.rank || left.item.order - right.item.order)
       .map(({ item }) => item);
-    const activeItem = matchedItems[0] ?? null;
+    const activeItem = resolveActiveItem(matchedItems);
 
     return {
       mode: "search",
@@ -230,15 +232,18 @@ export function getPaletteMenuModel({ palette, groups, activeCategory, query = "
     };
   }
 
+  const visibleItems = selectedCategory?.items ?? [];
+  const activeItem = resolveActiveItem(visibleItems);
+
   return {
     mode: "category",
     categories: categorySummaries,
     activeCategoryId,
     query,
-    items: selectedCategory?.items ?? [],
-    activeItem: null,
-    activeItemTestId: null,
-    matchCount: selectedCategory?.items.length ?? 0,
+    items: visibleItems,
+    activeItem,
+    activeItemTestId: activeItem?.testId ?? null,
+    matchCount: visibleItems.length,
     showItemMeta: false,
     emptyMessage: "No nodes available in this category.",
   };
@@ -302,8 +307,8 @@ export function renderPalettePanel({ palette, groups }) {
   `;
 }
 
-export function renderPaletteMenu({ palette, groups, activeCategory, query = "", icons }) {
-  const model = getPaletteMenuModel({ palette, groups, activeCategory, query });
+export function renderPaletteMenu({ palette, groups, activeCategory, query = "", activeItemId = null, icons }) {
+  const model = getPaletteMenuModel({ palette, groups, activeCategory, query, activeItemId });
   const categoryRows = buildPaletteMenuCategoryRows(model.categories);
   const categoryLayout = categoryRows.length > 1 ? "stacked" : "single";
 
@@ -381,6 +386,7 @@ export function renderPaletteMenu({ palette, groups, activeCategory, query = "",
                     type="button"
                     data-action="${item.action}"
                     ${extra}
+                    data-menu-item-id="${escapeHtml(item.id)}"
                     data-testid="${escapeHtml(item.testId)}"
                     data-menu-item-active="${model.activeItemTestId === item.testId ? "true" : "false"}"
                     aria-selected="${model.activeItemTestId === item.testId ? "true" : "false"}"

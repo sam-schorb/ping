@@ -1151,6 +1151,61 @@ test("add-node menu auto-selects the top search result and Enter creates it imme
   }
 });
 
+test("add-node menu arrow keys move the selected search result before Enter creates it", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness();
+    await harness.flush();
+
+    harness.container.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", {
+        key: "N",
+        bubbles: true,
+      }),
+    );
+    await harness.flush();
+
+    const searchInput = harness.query("palette-menu-search");
+    searchInput.value = "de";
+    searchInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await harness.flush();
+
+    assert.equal(harness.query("palette-menu-demux").getAttribute("data-menu-item-active"), "true");
+    assert.equal(harness.query("palette-menu-decay").getAttribute("data-menu-item-active"), "false");
+
+    const updatedSearchInput = harness.query("palette-menu-search");
+    updatedSearchInput.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", {
+        key: "ArrowDown",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await harness.flush();
+
+    assert.equal(harness.query("palette-menu-demux").getAttribute("data-menu-item-active"), "false");
+    assert.equal(harness.query("palette-menu-decay").getAttribute("data-menu-item-active"), "true");
+
+    const afterArrowSearchInput = harness.query("palette-menu-search");
+    afterArrowSearchInput.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await harness.flush();
+
+    assert.equal(harness.container.querySelector('[data-testid="palette-menu"]'), null);
+    assert.equal(harness.snapshot.nodes.find((node) => node.id === "node-1")?.type, "decay");
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("add-node menu stays clickable through viewport-only rerenders", async () => {
   const dom = setupDom();
 

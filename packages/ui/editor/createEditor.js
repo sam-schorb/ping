@@ -2085,6 +2085,7 @@ function buildMenuMarkup(state) {
         groups: state.snapshot.groups ?? {},
         activeCategory: state.menu.category,
         query: state.menu.query,
+        activeItemId: state.menu.activeItemId,
         icons: state.config.icons,
       })}
     </div>
@@ -2384,6 +2385,8 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       category: DEFAULT_PALETTE_MENU_CATEGORY_ID,
       query: "",
       focusSearch: false,
+      activeItemId: null,
+      scrollActiveItem: false,
     },
     sidebarExtensions: normalizeSidebarExtensions(sidebarExtensions),
     sidebarCollapsed: false,
@@ -2734,6 +2737,8 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       category: DEFAULT_PALETTE_MENU_CATEGORY_ID,
       query: "",
       focusSearch: true,
+      activeItemId: null,
+      scrollActiveItem: false,
     };
     state.menuCategoriesScrollLeft = 0;
     state.creationOffset = 0;
@@ -4010,11 +4015,40 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       groups: state.snapshot.groups ?? {},
       activeCategory: state.menu.category,
       query: state.menu.query,
+      activeItemId: state.menu.activeItemId,
     });
   }
 
   function getActivePaletteMenuItem() {
     return getCurrentPaletteMenuModel().activeItem;
+  }
+
+  function movePaletteMenuSelection(direction) {
+    const model = getCurrentPaletteMenuModel();
+
+    if (model.items.length === 0) {
+      return false;
+    }
+
+    const activeItem = model.activeItem ?? model.items[0];
+    const activeIndex = Math.max(
+      0,
+      model.items.findIndex((item) => item.id === activeItem?.id),
+    );
+    const nextIndex = clamp(activeIndex + direction, 0, model.items.length - 1);
+    const nextItem = model.items[nextIndex];
+
+    if (!nextItem || nextItem.id === state.menu.activeItemId) {
+      return false;
+    }
+
+    state.menu = {
+      ...state.menu,
+      activeItemId: nextItem.id,
+      scrollActiveItem: true,
+    };
+    markDirty();
+    return true;
   }
 
   function isGlobalEditorShortcutTarget(target) {
@@ -4034,8 +4068,14 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     if (
       state.menu.open &&
       event.target?.matches?.("[data-action='search-menu']") &&
-      event.key === "Enter"
+      (event.key === "Enter" || event.key === "ArrowDown" || event.key === "ArrowUp")
     ) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        movePaletteMenuSelection(event.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+
       const activeMenuItem = getActivePaletteMenuItem();
 
       if (!activeMenuItem) {
@@ -4323,6 +4363,8 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       state.menu = {
         ...state.menu,
         category: target.getAttribute("data-menu-category") || DEFAULT_PALETTE_MENU_CATEGORY_ID,
+        activeItemId: null,
+        scrollActiveItem: false,
       };
       markDirty();
       return true;
@@ -4522,6 +4564,8 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
         ...state.menu,
         query: target.value,
         focusSearch: false,
+        activeItemId: null,
+        scrollActiveItem: false,
       };
       markDirty();
       return;
@@ -4860,6 +4904,16 @@ function buildViewportMarkup(selection) {
       state.menu = {
         ...state.menu,
         focusSearch: false,
+      };
+    }
+    if (state.menu.open && state.menu.scrollActiveItem) {
+      const activeMenuItem = Array.from(state.root.querySelectorAll("[data-menu-item-id]")).find(
+        (element) => element.getAttribute("data-menu-item-id") === state.menu.activeItemId,
+      );
+      activeMenuItem?.scrollIntoView?.({ block: "nearest" });
+      state.menu = {
+        ...state.menu,
+        scrollActiveItem: false,
       };
     }
     if (
