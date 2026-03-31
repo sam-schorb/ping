@@ -214,12 +214,15 @@ export function getPaletteMenuModel({ palette, groups, activeCategory, query = "
       .filter((entry) => entry.rank !== null)
       .sort((left, right) => left.rank - right.rank || left.item.order - right.item.order)
       .map(({ item }) => item);
+    const activeItem = matchedItems[0] ?? null;
 
     return {
       mode: "search",
       categories: categorySummaries,
       activeCategoryId,
       items: matchedItems,
+      activeItem,
+      activeItemTestId: activeItem?.testId ?? null,
       matchCount: matchedItems.length,
       query,
       showItemMeta: true,
@@ -233,6 +236,8 @@ export function getPaletteMenuModel({ palette, groups, activeCategory, query = "
     activeCategoryId,
     query,
     items: selectedCategory?.items ?? [],
+    activeItem: null,
+    activeItemTestId: null,
     matchCount: selectedCategory?.items.length ?? 0,
     showItemMeta: false,
     emptyMessage: "No nodes available in this category.",
@@ -372,11 +377,13 @@ export function renderPaletteMenu({ palette, groups, activeCategory, query = "",
 
                 return `
                   <button
-                    class="ping-editor__menu-item"
+                    class="ping-editor__menu-item ${model.activeItemTestId === item.testId ? "is-active" : ""}"
                     type="button"
                     data-action="${item.action}"
                     ${extra}
                     data-testid="${escapeHtml(item.testId)}"
+                    data-menu-item-active="${model.activeItemTestId === item.testId ? "true" : "false"}"
+                    aria-selected="${model.activeItemTestId === item.testId ? "true" : "false"}"
                     aria-label="Create ${escapeHtml(item.label)}"
                   >
                     ${createMenuIcon(item, icons)}

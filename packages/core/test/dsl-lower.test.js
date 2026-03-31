@@ -87,6 +87,24 @@ test("lowerGroupDsl lowers stored params, control inlets, and .out() terminals",
   assertRoutesAndBuild(result.group);
 });
 
+test("lowerGroupDsl lowers drop as a canonical single-stream chain node", () => {
+  const result = lowerGroupDsl("$0.drop(3).outlet(0)", registry, {
+    groupId: "group-drop",
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(
+    result.group.graph.nodes.map((node) => ({
+      type: node.type,
+      param: node.params.param,
+    })),
+    [{ type: "drop", param: 3 }],
+  );
+  assert.deepEqual(result.group.inputs, [{ nodeId: "node-1", portSlot: 0 }]);
+  assert.deepEqual(result.group.outputs, [{ nodeId: "node-1", portSlot: 0 }]);
+  assertRoutesAndBuild(result.group);
+});
+
 test("lowerGroupDsl lowers recursive bindings into a build-valid feedback graph", () => {
   const source = [
     "a = $0.every(3){m[0]}",

@@ -28,6 +28,7 @@ test("NODE_REGISTRY includes the complete built-in node set and validates cleanl
     "hpf",
     "lpf",
     "every",
+    "drop",
     "random",
     "counter",
     "gtp",

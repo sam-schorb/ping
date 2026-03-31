@@ -108,7 +108,13 @@ export function createEveryState() {
   };
 }
 
-function normalizeEveryCount(rawCount, step) {
+export function createDropState() {
+  return {
+    count: 1,
+  };
+}
+
+function normalizeSteppedCount(rawCount, step) {
   let count = Number.isFinite(rawCount) ? Math.trunc(rawCount) : 1;
 
   if (count < 0) {
@@ -124,12 +130,24 @@ function normalizeEveryCount(rawCount, step) {
 
 export function everySignal(ctx) {
   const step = clampDiscreteNodeValue(ctx.param);
-  const count = normalizeEveryCount(ctx.state?.count, step);
+  const count = normalizeSteppedCount(ctx.state?.count, step);
   const shouldPass = count === step || count === 0;
   const nextCount = shouldPass ? 1 : count + 1;
 
   return {
     outputs: shouldPass ? [createOutput(ctx.pulse.value)] : [],
+    state: replaceState(ctx.state, { count: nextCount }),
+  };
+}
+
+export function dropSignal(ctx) {
+  const step = clampDiscreteNodeValue(ctx.param);
+  const count = normalizeSteppedCount(ctx.state?.count, step);
+  const shouldDrop = count === step || count === 0;
+  const nextCount = shouldDrop ? 1 : count + 1;
+
+  return {
+    outputs: shouldDrop ? [] : [createOutput(ctx.pulse.value)],
     state: replaceState(ctx.state, { count: nextCount }),
   };
 }

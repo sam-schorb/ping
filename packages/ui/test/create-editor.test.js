@@ -1107,6 +1107,50 @@ test("add-node menu autofocuses search and preserves focus while filtering", asy
   }
 });
 
+test("add-node menu auto-selects the top search result and Enter creates it immediately", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness();
+    await harness.flush();
+
+    harness.container.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", {
+        key: "N",
+        bubbles: true,
+      }),
+    );
+    await harness.flush();
+
+    const searchInput = harness.query("palette-menu-search");
+    searchInput.value = "dro";
+    searchInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await harness.flush();
+
+    const dropItem = harness.query("palette-menu-drop");
+    assert.equal(dropItem.getAttribute("data-menu-item-active"), "true");
+    assert.equal(dropItem.classList.contains("is-active"), true);
+
+    const updatedSearchInput = harness.query("palette-menu-search");
+    updatedSearchInput.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await harness.flush();
+
+    assert.equal(harness.container.querySelector('[data-testid="palette-menu"]'), null);
+    assert.equal(harness.snapshot.nodes.find((node) => node.id === "node-1")?.type, "drop");
+    assert.equal(dom.window.document.activeElement, harness.query("editor-viewport"));
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("add-node menu stays clickable through viewport-only rerenders", async () => {
   const dom = setupDom();
 

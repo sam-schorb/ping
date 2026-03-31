@@ -24,6 +24,7 @@ test("buildPalette returns a stable visible palette order with required UI field
     "hpf",
     "lpf",
     "every",
+    "drop",
     "random",
     "counter",
     "gtp",

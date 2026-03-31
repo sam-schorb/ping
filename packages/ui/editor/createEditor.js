@@ -16,6 +16,7 @@ import { renderDiagnosticsPanel } from "../panels/diagnostics.js";
 import { renderGroupsPanel } from "../panels/groups.js";
 import {
   DEFAULT_PALETTE_MENU_CATEGORY_ID,
+  getPaletteMenuModel,
   renderPaletteMenu,
 } from "../panels/palette.js";
 import { renderSamplesPanel } from "../panels/samples.js";
@@ -1781,6 +1782,14 @@ function createStyles(config) {
       .ping-editor__menu-item:hover {
         transform: none;
         border-color: var(--ping-chrome-notice-border);
+      }
+      .ping-editor__menu-item.is-active {
+        border-color: var(--ping-chrome-notice-border);
+        background: var(--ping-chrome-notice-soft);
+        color: var(--ping-chrome-ink-strong);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.24),
+          0 0 0 1px rgba(133, 184, 255, 0.14);
       }
       .ping-editor__menu-item-icon-wrap {
         width: 24px;
@@ -3995,6 +4004,19 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     }
   }
 
+  function getCurrentPaletteMenuModel() {
+    return getPaletteMenuModel({
+      palette: state.palette,
+      groups: state.snapshot.groups ?? {},
+      activeCategory: state.menu.category,
+      query: state.menu.query,
+    });
+  }
+
+  function getActivePaletteMenuItem() {
+    return getCurrentPaletteMenuModel().activeItem;
+  }
+
   function isGlobalEditorShortcutTarget(target) {
     const document = state.root?.ownerDocument;
 
@@ -4009,6 +4031,26 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
   }
 
   function handleKeyDown(event) {
+    if (
+      state.menu.open &&
+      event.target?.matches?.("[data-action='search-menu']") &&
+      event.key === "Enter"
+    ) {
+      const activeMenuItem = getActivePaletteMenuItem();
+
+      if (!activeMenuItem) {
+        return;
+      }
+
+      event.preventDefault();
+      if (activeMenuItem.action === "create-group-node") {
+        handleCreateNode("group", activeMenuItem.groupRef);
+      } else {
+        handleCreateNode(activeMenuItem.type);
+      }
+      return;
+    }
+
     if (
       event.target?.matches?.("[data-action='group-dsl-source']") &&
       event.key === "Enter"

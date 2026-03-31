@@ -21,6 +21,7 @@ const RESERVED_BINDING_NAMES = new Set([
   "hpf",
   "lpf",
   "every",
+  "drop",
   "random",
   "counter",
   "gtp",

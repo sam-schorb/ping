@@ -469,7 +469,7 @@ The current built-in node set already falls into a small number of DSL shape fam
 
 | Family                    | Node types                                                                                                                                                   | Canonical DSL shape                                                                        | Notes                                                                                                         |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| Single-stream chain nodes | `pulse`, `add`, `sub`, `set`, `speed`, `pitch`, `decay`, `crush`, `hpf`, `lpf`, `block`, `every`, `random`, `counter`, `gtp`, `ltp`, `gtep`, `ltep`, `match` | `source.node(param){control}` or `name = node(param){control}` plus a separate signal wire | Param clause optional. Control clause optional. The current built-ins expose at most one live control clause. |
+| Single-stream chain nodes | `pulse`, `add`, `sub`, `set`, `speed`, `pitch`, `decay`, `crush`, `hpf`, `lpf`, `block`, `every`, `drop`, `random`, `counter`, `gtp`, `ltp`, `gtep`, `ltep`, `match` | `source.node(param){control}` or `name = node(param){control}` plus a separate signal wire | Param clause optional. Control clause optional. The current built-ins expose at most one live control clause. |
 | Sink                      | `out`                                                                                                                                                        | `expr.out()`                                                                               | Real internal sink node. `output` remains an internal alias, not the canonical DSL spelling.                  |
 | Multi-output routing      | `mux`, `switch`                                                                                                                                              | `name = source.mux()` or `name = source.switch(param){control}` then `name[index]`         | Indexed outputs are 0-based.                                                                                  |
 | Multi-input routing       | `demux`                                                                                                                                                      | `name = demux()` then `source.name[index]`                                                 | Indexed inputs are 0-based.                                                                                   |
@@ -722,6 +722,7 @@ The canonical DSL reserves these words:
 - `hpf`
 - `lpf`
 - `every`
+- `drop`
 - `random`
 - `counter`
 - `gtp`

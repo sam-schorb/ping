@@ -139,6 +139,36 @@ test("every maintains deterministic state progression and normalizes count when 
   assert.equal(result.state.count, 1);
 });
 
+test("drop maintains deterministic state progression and normalizes count when N shrinks", () => {
+  const node = getNodeDefinition("drop");
+  let state = node.initState();
+
+  let result = node.onSignal(createBehaviorContext({ param: 3, state }));
+  assert.deepEqual(result.outputs, [{ value: 4 }]);
+  state = result.state;
+
+  result = node.onSignal(createBehaviorContext({ param: 3, state }));
+  assert.deepEqual(result.outputs, [{ value: 4 }]);
+  state = result.state;
+
+  result = node.onSignal(createBehaviorContext({ param: 3, state }));
+  assert.equal(result.outputs.length, 0);
+  assert.equal(result.state.count, 1);
+
+  result = node.onSignal(
+    createBehaviorContext({
+      param: 4,
+      state: { count: 8 },
+    }),
+  );
+  assert.equal(result.outputs.length, 0);
+  assert.equal(result.state.count, 1);
+
+  result = node.onSignal(createBehaviorContext({ param: 1, state: node.initState() }));
+  assert.equal(result.outputs.length, 0);
+  assert.equal(result.state.count, 1);
+});
+
 test("random uses the provided RNG and clamps to the current max parameter", () => {
   const node = getNodeDefinition("random");
   const lowRoll = node.onSignal(
