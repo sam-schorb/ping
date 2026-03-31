@@ -11,8 +11,10 @@ import {
   buildObstacleAwarePreviewRoute,
   createEditor,
   DEFAULT_UI_CONFIG,
+  mergeUIConfig,
   worldToScreen,
 } from "../src/index.js";
+import { resolveNodeTheme } from "../theme/node-theme.js";
 import {
   createEditorHarness,
   createRuntimeStub,
@@ -3272,6 +3274,113 @@ test("zooming in scales graph chrome while keeping hit targets stable", async ()
     assert.ok(Number(afterLabel.getAttribute("font-size")) > Number(beforeLabel.getAttribute("font-size")));
     assert.ok(Number(afterIcon.getAttribute("width")) > Number(beforeIcon.getAttribute("width")));
     assert.ok(Number(afterThumb.getAttribute("r")) > Number(beforeThumb.getAttribute("r")));
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("nodes use the shared UI category themes instead of raw registry fills", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-pulse", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-add", type: "add", pos: { x: 6, y: 2 }, rot: 0, params: { param: 3 } },
+          { id: "node-out", type: "out", pos: { x: 10, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [],
+        groups: {},
+      },
+    });
+    await harness.flush(4);
+
+    const pulseDefinition = TEST_REGISTRY.getNodeDefinition("pulse");
+    const addDefinition = TEST_REGISTRY.getNodeDefinition("add");
+    const outDefinition = TEST_REGISTRY.getNodeDefinition("out");
+    const pulseTheme = resolveNodeTheme({
+      category: pulseDefinition.category,
+      color: pulseDefinition.color,
+      config: DEFAULT_UI_CONFIG,
+    });
+    const addTheme = resolveNodeTheme({
+      category: addDefinition.category,
+      color: addDefinition.color,
+      config: DEFAULT_UI_CONFIG,
+    });
+    const outTheme = resolveNodeTheme({
+      category: outDefinition.category,
+      color: outDefinition.color,
+      config: DEFAULT_UI_CONFIG,
+    });
+
+    const pulseNode = harness.query("node-node-pulse");
+    const addNode = harness.query("node-node-add");
+    const outNode = harness.query("node-node-out");
+
+    assert.equal(pulseNode.querySelector(".ping-editor__node").getAttribute("fill"), pulseTheme.fill);
+    assert.equal(
+      pulseNode.querySelector(".ping-editor__node-icon path").getAttribute("stroke"),
+      pulseTheme.icon,
+    );
+    assert.equal(addNode.querySelector(".ping-editor__node").getAttribute("fill"), addTheme.fill);
+    assert.equal(
+      addNode.querySelector(".ping-editor__node-icon path").getAttribute("stroke"),
+      addTheme.icon,
+    );
+    assert.equal(outNode.querySelector(".ping-editor__node").getAttribute("fill"), outTheme.fill);
+    assert.equal(
+      outNode.querySelector(".ping-editor__node-icon path").getAttribute("stroke"),
+      outTheme.icon,
+    );
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("palette menu icon chips share the same UI category theme mapping", async () => {
+  const dom = setupDom();
+
+  try {
+    const customConfig = mergeUIConfig(DEFAULT_UI_CONFIG, {
+      node: {
+        categoryThemes: {
+          default: {
+            menuChip: "#e9ddcf",
+          },
+          Sources: {
+            icon: "#9b533d",
+            menuChip: "#f1ddd3",
+          },
+        },
+      },
+    });
+    const harness = createEditorHarness({ config: customConfig });
+    await harness.flush();
+
+    const addNodeButton = harness.container.querySelector('[data-action="open-menu"]');
+    assert.ok(addNodeButton);
+    harness.click(addNodeButton);
+    await harness.flush();
+
+    const pulseDefinition = TEST_REGISTRY.getNodeDefinition("pulse");
+    const pulseTheme = resolveNodeTheme({
+      category: pulseDefinition.category,
+      color: pulseDefinition.color,
+      config: customConfig,
+    });
+    const pulseMenuItem = harness.query("palette-menu-pulse");
+    const pulseIconWrap = pulseMenuItem.querySelector(".ping-editor__menu-item-icon-wrap");
+    const pulseIconPath = pulseMenuItem.querySelector(".ping-editor__menu-item-icon path");
+
+    assert.ok(pulseIconWrap.getAttribute("style")?.includes(`background:${pulseTheme.menuChip}`));
+    assert.ok(pulseIconWrap.getAttribute("style")?.includes(`color:${pulseTheme.icon}`));
+    assert.equal(pulseIconPath.getAttribute("stroke"), "currentColor");
 
     harness.unmount();
   } finally {

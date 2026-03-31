@@ -1,6 +1,7 @@
 import { isGroupBackedNodeType, routeEdge } from "@ping/core";
 
 import { resolveIcon } from "../icons/library.js";
+import { resolveNodeTheme } from "../theme/node-theme.js";
 import {
   createEmptyRoute,
   doesRouteIntersectBounds,
@@ -695,6 +696,11 @@ function renderNode(
   const definition = getResolvedNodeDefinition(snapshot, renderNodeModel, registry);
   const layout = getResolvedPortLayout(snapshot, renderNodeModel, registry);
   const icon = resolveIcon(definition.icon, config.icons);
+  const nodeTheme = resolveNodeTheme({
+    category: definition.category,
+    color: definition.color,
+    config,
+  });
   const screenBox = getNodeScreenBox(snapshot, renderNodeModel, registry, camera, config);
   const worldBounds = getNodeWorldBounds(snapshot, renderNodeModel, registry);
   const selectionHighlightColor = config.selection.highlightColor ?? config.selection.color;
@@ -845,7 +851,7 @@ function renderNode(
           width="${screenBox.width}"
           height="${screenBox.height}"
           rx="${nodeCornerRadiusPx}"
-          fill="${definition.category === "Unknown" ? "#d8d3cb" : definition.color ?? config.node.fill}"
+          fill="${nodeTheme.fill}"
           stroke="${showSelectionRing ? "none" : config.node.stroke}"
           stroke-width="${showSelectionRing ? 0 : zoomMetrics.nodeStrokePx}"
           data-node-id="${escapeHtml(node.id)}"
@@ -859,7 +865,7 @@ function renderNode(
           class="ping-editor__node-icon"
           pointer-events="none"
         >
-          <path d="${icon.path}" fill="none" stroke="${config.node.stroke}" stroke-width="${zoomMetrics.iconStrokeWidthPx}" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="${icon.path}" fill="none" stroke="${nodeTheme.icon}" stroke-width="${zoomMetrics.iconStrokeWidthPx}" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
         ${
           labelVisible

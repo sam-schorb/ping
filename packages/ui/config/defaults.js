@@ -1,4 +1,5 @@
 import { DEFAULT_ICON_LIBRARY } from "../icons/library.js";
+import { DEFAULT_NODE_CATEGORY_THEMES } from "../theme/node-theme.js";
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -24,12 +25,13 @@ export const DEFAULT_UI_CONFIG = Object.freeze({
     cornerRadiusPx: 6,
     minSizePx: 32,
     labelOffsetYPx: 14,
-    fill: "#ffffff",
-    stroke: "#2c2823",
-    text: "#2c2823",
+    fill: "#fbf4ec",
+    stroke: "#4a3229",
+    text: "#3a2921",
     iconSizePx: 16,
     iconOffsetXPx: 0,
     iconOffsetYPx: 0,
+    categoryThemes: DEFAULT_NODE_CATEGORY_THEMES,
   },
   port: {
     radiusPx: 4,

@@ -203,6 +203,7 @@ export function createRuntimeStub() {
 
 export function createEditorHarness(options = {}) {
   const registry = options.registry ?? TEST_REGISTRY;
+  const palette = options.palette ?? TEST_PALETTE;
   const runtime = options.runtime ?? createRuntimeStub();
   const model = new GraphModel({
     getNodeDefinition: registry.getNodeDefinition,
@@ -220,6 +221,7 @@ export function createEditorHarness(options = {}) {
   const editor = createEditor({
     registry,
     runtime,
+    config: options.config,
     onSidebarAction: options.onSidebarAction,
     sidebarExtensions: options.sidebarExtensions,
     onOutput(output) {
@@ -267,7 +269,7 @@ export function createEditorHarness(options = {}) {
       ...validation.errors,
       ...validation.warnings,
     ]);
-    editor.setPalette(TEST_PALETTE);
+    editor.setPalette(palette);
     editor.setSelection(selection);
     editor.setSlots(slots);
     editor.setTempo(tempo);

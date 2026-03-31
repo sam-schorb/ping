@@ -35,6 +35,7 @@ Provide the interactive node‑and‑cable editor plus the visual pulse‑thumb 
 - **Routed geometry** (from Routing+Delay): orth polyline + SVG path + total length per edge.
 - **Node registry**: palette + port layout + icon/color/label/description metadata.
 - **Runtime thumb state (optional)**: UI pulls via `runtime.getThumbState(nowTick)`; includes `edgeId` + `progress` + `speed`.
+  - `nowTick` must come from the active transport / scheduling clock, not from browser-reported audio output latency compensation. Visual thumbs and node pulses should follow the same tick domain that Runtime and Audio Integration use when scheduling output events.
 - **Sample slot assignments** (8 slots, loaded from project JSON or defaults).
 - **UI config**: grid size, colors, corner smoothing, etc.
 

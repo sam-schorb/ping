@@ -21,6 +21,12 @@ import {
 } from "@ping/core";
 import { Editor } from "@ping/ui/react";
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+  getAudibleLatencySec,
+  getClockTimeSec,
+  getPresentationClockTimeSec,
+  tickFromTransport,
+} from "./presentation-clock.mjs";
 
 const REGISTRY_INDEX = buildRegistryIndex();
 const REGISTRY_API = Object.freeze({
@@ -340,36 +346,6 @@ export function Ping() {
     }
   }
 
-  function getClockTimeSec(preferredAudioContext = null) {
-    const audioContext = preferredAudioContext ?? audioContextRef.current;
-
-    if (audioContext) {
-      return audioContext.currentTime;
-    }
-
-    return performance.now() / 1000;
-  }
-
-  function getAudibleLatencySec(preferredAudioContext = null) {
-    const audioContext = preferredAudioContext ?? audioContextRef.current;
-
-    if (!audioContext) {
-      return 0;
-    }
-
-    const baseLatency = Number.isFinite(audioContext.baseLatency) ? audioContext.baseLatency : 0;
-    const outputLatency = Number.isFinite(audioContext.outputLatency)
-      ? audioContext.outputLatency
-      : 0;
-
-    return Math.max(0, baseLatency + outputLatency);
-  }
-
-  function getAudibleClockTimeSec(preferredAudioContext = null) {
-    const audioContext = preferredAudioContext ?? audioContextRef.current;
-    return Math.max(0, getClockTimeSec(audioContext) - getAudibleLatencySec(audioContext));
-  }
-
   function createBridgeTransport() {
     const transport = transportRef.current;
 
@@ -431,13 +407,7 @@ export function Ping() {
   resetTransportClockRef.current = resetTransportClock;
 
   function getNowTick(nowTimeSec = getClockTimeSec()) {
-    const transport = transportRef.current;
-
-    if (!(transport.bpm > 0)) {
-      return transport.originTick;
-    }
-
-    return transport.originTick + (nowTimeSec - transport.originTimeSec) * (transport.bpm / 60);
+    return tickFromTransport(transportRef.current, nowTimeSec);
   }
 
   function pushOutput(output) {
@@ -785,18 +755,8 @@ export function Ping() {
     function tickPreview() {
       const transport = transportRef.current;
       const audioContext = audioContextRef.current;
-      const baseLatency = Number.isFinite(audioContext?.baseLatency) ? audioContext.baseLatency : 0;
-      const outputLatency = Number.isFinite(audioContext?.outputLatency)
-        ? audioContext.outputLatency
-        : 0;
-      const nowTimeSec = Math.max(
-        0,
-        (audioContext?.currentTime ?? performance.now() / 1000) - (baseLatency + outputLatency),
-      );
-      const nowTick =
-        transport.bpm > 0
-          ? transport.originTick + (nowTimeSec - transport.originTimeSec) * (transport.bpm / 60)
-          : transport.originTick;
+      const nowTimeSec = getPresentationClockTimeSec(audioContext);
+      const nowTick = tickFromTransport(transport, nowTimeSec);
       const lastTick = previewRuntime.getMetrics()?.lastTickProcessed ?? 0;
 
       if (nowTick > lastTick) {
@@ -921,6 +881,9 @@ export function Ping() {
       },
       get audioContextTime() {
         return audioContextRef.current?.currentTime ?? null;
+      },
+      get presentationClockTimeSec() {
+        return getPresentationClockTimeSec(audioContextRef.current);
       },
       get audibleLatencySec() {
         return getAudibleLatencySec();

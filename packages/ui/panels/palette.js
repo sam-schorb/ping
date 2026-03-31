@@ -1,6 +1,7 @@
 import { isCodeNodeGroupId } from "@ping/core";
 
 import { resolveIcon } from "../icons/library.js";
+import { resolveNodeTheme } from "../theme/node-theme.js";
 
 function escapeHtml(value) {
   return String(value)
@@ -41,12 +42,20 @@ function getCategoryDisplayLabel(category) {
   return normalized;
 }
 
-function createMenuIcon(item, icons) {
+function createMenuIcon(item, icons, config) {
   const icon = resolveIcon(item.icon, icons);
-  const stroke = item.color || "#2c2823";
+  const theme = resolveNodeTheme({
+    category: item.category,
+    color: item.color,
+    config,
+  });
 
   return `
-    <span class="ping-editor__menu-item-icon-wrap" aria-hidden="true">
+    <span
+      class="ping-editor__menu-item-icon-wrap"
+      style="background:${escapeHtml(theme.menuChip)}; color:${escapeHtml(theme.icon)};"
+      aria-hidden="true"
+    >
       <svg
         class="ping-editor__menu-item-icon"
         viewBox="${icon.viewBox}"
@@ -56,7 +65,7 @@ function createMenuIcon(item, icons) {
         <path
           d="${icon.path}"
           fill="none"
-          stroke="${escapeHtml(stroke)}"
+          stroke="currentColor"
           stroke-width="1.6"
           stroke-linecap="round"
           stroke-linejoin="round"
@@ -307,7 +316,15 @@ export function renderPalettePanel({ palette, groups }) {
   `;
 }
 
-export function renderPaletteMenu({ palette, groups, activeCategory, query = "", activeItemId = null, icons }) {
+export function renderPaletteMenu({
+  palette,
+  groups,
+  activeCategory,
+  query = "",
+  activeItemId = null,
+  icons,
+  config,
+}) {
   const model = getPaletteMenuModel({ palette, groups, activeCategory, query, activeItemId });
   const categoryRows = buildPaletteMenuCategoryRows(model.categories);
   const categoryLayout = categoryRows.length > 1 ? "stacked" : "single";
@@ -392,7 +409,7 @@ export function renderPaletteMenu({ palette, groups, activeCategory, query = "",
                     aria-selected="${model.activeItemTestId === item.testId ? "true" : "false"}"
                     aria-label="Create ${escapeHtml(item.label)}"
                   >
-                    ${createMenuIcon(item, icons)}
+                    ${createMenuIcon(item, icons, config)}
                     <span class="ping-editor__menu-item-body">
                       <span class="ping-editor__menu-item-label">${escapeHtml(item.label)}</span>
                       ${

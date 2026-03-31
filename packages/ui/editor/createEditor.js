@@ -2087,6 +2087,7 @@ function buildMenuMarkup(state) {
         query: state.menu.query,
         activeItemId: state.menu.activeItemId,
         icons: state.config.icons,
+        config: state.config,
       })}
     </div>
   `;
