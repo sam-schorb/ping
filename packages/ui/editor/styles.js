@@ -694,6 +694,90 @@ export function createStyles(config) {
         letter-spacing: 0.06em;
         text-transform: uppercase;
       }
+      .ping-editor__docs-panel {
+        gap: 16px;
+      }
+      .ping-editor__docs-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .ping-editor__docs-tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 5px 10px;
+        border: 1px solid;
+        border-radius: 12px;
+        font: inherit;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.15;
+        letter-spacing: 0.03em;
+        text-transform: lowercase;
+        cursor: pointer;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+        transition:
+          opacity 120ms ease,
+          box-shadow 140ms ease;
+      }
+      .ping-editor__docs-tag:hover {
+        opacity: 0.8;
+      }
+      .ping-editor__docs-tag.is-all {
+        background: var(--ping-chrome-card-strong);
+        color: var(--ping-chrome-ink);
+        border-color: var(--ping-chrome-border);
+      }
+      .ping-editor__docs-tag.is-compact {
+        padding: 3px 8px;
+        font-size: 10px;
+      }
+      .ping-editor__docs-sections {
+        display: grid;
+        gap: 20px;
+      }
+      .ping-editor__docs-section-title {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ping-chrome-ink-muted);
+      }
+      .ping-editor__docs-list {
+        display: grid;
+        gap: 10px;
+      }
+      .ping-editor__docs-entry {
+        display: grid;
+        gap: 4px;
+        padding: 10px 12px;
+        border-radius: 16px;
+        border: 1px solid var(--ping-chrome-border);
+        background: var(--ping-chrome-card);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+      }
+      .ping-editor__docs-entry-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .ping-editor__docs-entry-title {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--ping-chrome-ink-strong);
+      }
+      .ping-editor__docs-entry-copy {
+        margin: 0;
+        font-size: 12px;
+        color: var(--ping-chrome-ink-muted);
+        line-height: 1.4;
+      }
+      .ping-editor__docs-entry-copy strong {
+        color: var(--ping-chrome-ink);
+      }
       .ping-editor__field {
         display: grid;
         gap: 6px;

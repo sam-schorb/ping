@@ -173,7 +173,7 @@ export function createInspectDslController({
 
     if (categoryId === "all") {
       if (typeof panelScroll.scrollTo === "function") {
-        panelScroll.scrollTo({ top: 0, behavior: "smooth" });
+        panelScroll.scrollTo({ top: 0, behavior: "instant" });
       } else {
         panelScroll.scrollTop = 0;
       }
@@ -191,7 +191,7 @@ export function createInspectDslController({
     const nextTop = Math.max(0, panelScroll.scrollTop + (targetRect.top - panelRect.top) - 8);
 
     if (typeof panelScroll.scrollTo === "function") {
-      panelScroll.scrollTo({ top: nextTop, behavior: "smooth" });
+      panelScroll.scrollTo({ top: nextTop, behavior: "instant" });
     } else {
       panelScroll.scrollTop = nextTop;
     }

@@ -173,7 +173,7 @@ export function renderDocsPanel({ palette, config }) {
                 data-docs-category-id="${escapeHtml(entry.categoryId)}"
                 data-testid="docs-section-${escapeHtml(entry.categoryId)}"
               >
-                <h2 class="ping-editor__panel-title">${escapeHtml(entry.label)}</h2>
+                <h2 class="ping-editor__docs-section-title">${escapeHtml(entry.label)}</h2>
                 <div class="ping-editor__docs-list">
                   ${entry.items
                     .map(
