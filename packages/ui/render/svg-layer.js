@@ -158,7 +158,7 @@ function clampValue(value, min, max) {
 const NODE_PULSE_SCALE_DELTA = 0.04;
 const NODE_PULSE_REFERENCE_WORLD_SIZE = 3;
 
-function getNodePulseScale(progress, cameraScale, screenBox, config) {
+export function getNodePulseScale(progress, cameraScale, screenBox, config) {
   const zoomScale = Number.isFinite(cameraScale) && cameraScale > 0 ? cameraScale : 1;
   const pulseDelta = clampValue(NODE_PULSE_SCALE_DELTA * zoomScale ** -0.18, 0.03, 0.05);
   const baseScale = 1 + pulseDelta * Math.sin(Math.PI * clampValue(progress, 0, 1));
@@ -198,6 +198,17 @@ function createScaleTransform(centerX, centerY, scale) {
 
 function scaleVisual(base, cameraScale, { power = 0.35, min = base * 0.75, max = base * 1.6 } = {}) {
   return clampValue(base * cameraScale ** power, min, max);
+}
+
+export function getNodeLabelFontPx(camera, config) {
+  const scale = camera?.scale > 0 ? camera.scale : 1;
+  const labelFontBasePx = config.node.labelFontSizePx ?? config.text.fontSizePx * 1.5;
+
+  return scaleVisual(labelFontBasePx, scale, {
+    power: 0.28,
+    min: Math.max(12, labelFontBasePx * 0.83),
+    max: labelFontBasePx * 1.33,
+  });
 }
 
 function createZoomMetrics(camera, config) {
@@ -256,11 +267,7 @@ function createZoomMetrics(camera, config) {
       min: 1.2,
       max: 2.1,
     }),
-    labelFontPx: scaleVisual(config.text.fontSizePx, scale, {
-      power: 0.28,
-      min: 10,
-      max: 16,
-    }),
+    labelFontPx: getNodeLabelFontPx(camera, config),
     labelOffsetPx: scaleVisual(config.node.labelOffsetYPx, scale, {
       power: 0.26,
       min: 12,
@@ -350,16 +357,20 @@ function getEdgeRoute(snapshot, edge, routes, registry) {
 }
 
 function shouldShowNodeLabel(screenBox, config, zoomMetrics) {
+  const visibilityMultiplier = config.node.labelVisibilityThresholdMultiplier ?? 1;
   const minLabelWidth = Math.max(
     config.node.minSizePx + zoomMetrics.nodePaddingPx,
-    zoomMetrics.iconSizePx + zoomMetrics.labelFontPx * 2.25,
+    zoomMetrics.labelFontPx * 2.25,
   );
   const minLabelHeight = Math.max(
     config.node.minSizePx + zoomMetrics.nodePaddingPx,
-    zoomMetrics.iconSizePx + zoomMetrics.nodePaddingPx * 2 + zoomMetrics.labelFontPx * 1.2,
+    zoomMetrics.nodePaddingPx * 2 + zoomMetrics.labelFontPx * 1.2,
   );
 
-  return screenBox.width >= minLabelWidth && screenBox.height >= minLabelHeight;
+  return (
+    screenBox.width >= minLabelWidth * visibilityMultiplier &&
+    screenBox.height >= minLabelHeight * visibilityMultiplier
+  );
 }
 
 function getNodeIconLayout(screenBox, config, zoomMetrics, labelVisible) {
@@ -369,13 +380,15 @@ function getNodeIconLayout(screenBox, config, zoomMetrics, labelVisible) {
     screenBox.height * 0.2,
   );
   const padding = Math.max(2, maxPadding);
+  const topBandHeight = screenBox.height * (config.node.iconBandHeightPct ?? 2 / 3);
 
   if (!labelVisible) {
-    const size = Math.max(0, Math.min(screenBox.width, screenBox.height) - padding * 2);
+    const size = Math.max(0, Math.min(screenBox.width, topBandHeight) - padding * 2);
+    const topBandY = screenBox.y;
 
     return {
       x: screenBox.x + (screenBox.width - size) / 2,
-      y: screenBox.y + (screenBox.height - size) / 2,
+      y: topBandY + (topBandHeight - size) / 2,
       size,
     };
   }
@@ -391,8 +404,8 @@ function getNodeIconLayout(screenBox, config, zoomMetrics, labelVisible) {
   );
 
   return {
-    x: screenBox.x + padding + config.node.iconOffsetXPx,
-    y: screenBox.y + padding + config.node.iconOffsetYPx,
+    x: screenBox.x + (screenBox.width - size) / 2 + config.node.iconOffsetXPx,
+    y: screenBox.y + (topBandHeight - size) / 2 + config.node.iconOffsetYPx,
     size,
   };
 }
@@ -856,26 +869,35 @@ function renderNode(
           stroke-width="${showSelectionRing ? 0 : zoomMetrics.nodeStrokePx}"
           data-node-id="${escapeHtml(node.id)}"
         />
-        <svg
-          x="${iconLayout.x}"
-          y="${iconLayout.y}"
-          width="${iconLayout.size}"
-          height="${iconLayout.size}"
-          viewBox="${icon.viewBox}"
-          class="ping-editor__node-icon"
-          pointer-events="none"
-        >
-          <path d="${icon.path}" fill="none" stroke="${nodeTheme.icon}" stroke-width="${zoomMetrics.iconStrokeWidthPx}" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
+        ${
+          labelVisible
+            ? ""
+            : `
+              <svg
+                x="${iconLayout.x}"
+                y="${iconLayout.y}"
+                width="${iconLayout.size}"
+                height="${iconLayout.size}"
+                viewBox="${icon.viewBox}"
+                class="ping-editor__node-icon"
+                pointer-events="none"
+              >
+                <path d="${icon.path}" fill="none" stroke="${nodeTheme.icon}" stroke-width="${zoomMetrics.iconStrokeWidthPx}" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            `
+        }
         ${
           labelVisible
             ? `
               <text
                 class="ping-editor__node-label"
-                x="${screenBox.x + zoomMetrics.nodePaddingPx}"
-                y="${screenBox.y + screenBox.height - zoomMetrics.nodePaddingPx}"
+                x="${screenBox.x + screenBox.width / 2}"
+                y="${screenBox.y + screenBox.height * (config.node.labelMiddleYPct ?? 0.52)}"
                 fill="${config.node.text}"
                 font-size="${zoomMetrics.labelFontPx}"
+                font-weight="${config.node.labelFontWeight ?? config.text.fontWeight}"
+                dominant-baseline="middle"
+                text-anchor="middle"
               >
                 ${canvasLabel}
               </text>
