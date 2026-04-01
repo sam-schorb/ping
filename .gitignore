@@ -4,3 +4,4 @@ node_modules/
 apps/web/public/dough/
 apps/web/playwright-report/
 apps/web/test-results/
+moduleSpecs/
