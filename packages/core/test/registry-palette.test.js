@@ -26,7 +26,7 @@ test("buildPalette returns a stable visible palette order with required UI field
     "every",
     "drop",
     "random",
-    "counter",
+    "count",
     "gtp",
     "ltp",
     "gtep",

@@ -15,9 +15,9 @@ test("runtime applies control events before signals at the same node and tick", 
       edgeId: "edge-out",
     },
   ]);
-  assert.equal(runtime.graph.nodes[runtime.graph.nodeIndex.get("node-counter")].param, 2);
+  assert.equal(runtime.graph.nodes[runtime.graph.nodeIndex.get("node-count")].param, 2);
   assert.equal(
-    runtime.graph.nodes[runtime.graph.nodeIndex.get("node-counter")].state.count,
+    runtime.graph.nodes[runtime.graph.nodeIndex.get("node-count")].state.count,
     1,
   );
 });

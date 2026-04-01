@@ -75,7 +75,7 @@ function withCustomEntityIds(group, nodeIds, edgeIds) {
 }
 
 test("lowerGroupDsl preserves existing node ids on compatible edits", () => {
-  const source = ["a = $0.every(2)", "b = a.counter(4)", "b.outlet(0)"].join("\n");
+  const source = ["a = $0.every(2)", "b = a.count(4)", "b.outlet(0)"].join("\n");
   const initial = lowerGroupDsl(source, registry, {
     groupId: "group-reconcile-ids",
   });
@@ -84,7 +84,7 @@ test("lowerGroupDsl preserves existing node ids on compatible edits", () => {
 
   const existingGroup = withCustomEntityIds(
     initial.group,
-    ["legacy-every", "legacy-counter"],
+    ["legacy-every", "legacy-count"],
     ["legacy-edge"],
   );
   const reconciled = lowerGroupDsl(source, registry, {
@@ -94,7 +94,7 @@ test("lowerGroupDsl preserves existing node ids on compatible edits", () => {
   assert.equal(reconciled.ok, true);
   assert.deepEqual(
     reconciled.group.graph.nodes.map((node) => node.id),
-    ["legacy-every", "legacy-counter"],
+    ["legacy-every", "legacy-count"],
   );
   assertRoutesAndBuild(reconciled.group);
 });
@@ -158,7 +158,7 @@ test("lowerGroupDsl falls back to fresh ids when structure diverges beyond recon
   assert.equal(initial.ok, true);
 
   const existingGroup = withCustomEntityIds(initial.group, ["legacy-every"], []);
-  const reconciled = lowerGroupDsl("$0.counter(4).outlet(0)", registry, {
+  const reconciled = lowerGroupDsl("$0.count(4).outlet(0)", registry, {
     existingGroup,
   });
 

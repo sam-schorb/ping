@@ -22,7 +22,7 @@ test("fresh DSL-authored groups generate deterministic node positions", () => {
   const source = [
     "m = $0.mux()",
     "a = m[0].every(2)",
-    "b = m[1].counter(4)",
+    "b = m[1].count(4)",
     "a.outlet(0)",
     "b.outlet(1)",
   ].join("\n");
@@ -74,7 +74,7 @@ test("fresh DSL-authored groups fail cleanly when a requested distance is infeas
 test("fresh DSL-authored groups preserve stable visual ordering for demux inputs", () => {
   const source = [
     "a = $0.every(2)",
-    "b = $1.counter(4)",
+    "b = $1.count(4)",
     "d = demux()",
     "a.d[0]",
     "b.d[1]",
@@ -97,7 +97,7 @@ test("fresh DSL-authored groups preserve stable visual ordering for switch outpu
   const source = [
     "sw = $0.switch(2){$1}",
     "a = sw[0].every(2)",
-    "b = sw[3].counter(4)",
+    "b = sw[3].count(4)",
     "a.outlet(0)",
     "b.outlet(1)",
   ].join("\n");

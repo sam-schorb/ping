@@ -33,7 +33,7 @@ function assertRoutesAndBuild(group) {
 }
 
 test("lowerGroupDsl lowers a simple chain into a fresh valid group definition", () => {
-  const result = lowerGroupDsl("$0.every(2).counter(4).outlet(0)", registry, {
+  const result = lowerGroupDsl("$0.every(2).count(4).outlet(0)", registry, {
     groupId: "group-simple-chain",
   });
 
@@ -47,7 +47,7 @@ test("lowerGroupDsl lowers a simple chain into a fresh valid group definition", 
     })),
     [
       { id: "node-1", type: "every", param: 2, name: undefined },
-      { id: "node-2", type: "counter", param: 4, name: undefined },
+      { id: "node-2", type: "count", param: 4, name: undefined },
     ],
   );
   assert.deepEqual(result.group.inputs, [{ nodeId: "node-1", portSlot: 0 }]);
@@ -108,7 +108,7 @@ test("lowerGroupDsl lowers drop as a canonical single-stream chain node", () => 
 test("lowerGroupDsl lowers recursive bindings into a build-valid feedback graph", () => {
   const source = [
     "a = $0.every(3){m[0]}",
-    "b = a.counter(4)",
+    "b = a.count(4)",
     "m = b.mux()",
     "m[1].outlet(0)",
   ].join("\n");
@@ -125,7 +125,7 @@ test("lowerGroupDsl lowers recursive bindings into a build-valid feedback graph"
     })),
     [
       { type: "every", name: "a", param: 3 },
-      { type: "counter", name: "b", param: 4 },
+      { type: "count", name: "b", param: 4 },
       { type: "mux", name: "m", param: undefined },
     ],
   );

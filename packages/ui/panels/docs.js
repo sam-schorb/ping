@@ -91,7 +91,7 @@ function getControlPortDescription(item) {
       return "Sets N, so every (N + 1)th pulse is dropped.";
     case "random":
       return "Sets the maximum random output value.";
-    case "counter":
+    case "count":
       return "Sets the wrap limit.";
     case "gtp":
     case "ltp":

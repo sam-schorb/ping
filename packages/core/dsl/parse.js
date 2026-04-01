@@ -22,7 +22,7 @@ export const DSL_RESERVED_WORDS = new Set([
   "every",
   "drop",
   "random",
-  "counter",
+  "count",
   "gtp",
   "ltp",
   "gtep",

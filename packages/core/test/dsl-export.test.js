@@ -81,14 +81,14 @@ test("exportGroupDsl renders a simple chain in canonical outlet form", () => {
     id: "group-simple-chain",
     nodes: [
       createNode({ id: "node-every", type: "every", x: 0, y: 0, param: 2 }),
-      createNode({ id: "node-counter", type: "counter", x: 4, y: 0, param: 4 }),
+      createNode({ id: "node-count", type: "count", x: 4, y: 0, param: 4 }),
     ],
-    edges: [createEdge("edge-every-counter", "node-every", 0, "node-counter", 0)],
+    edges: [createEdge("edge-every-count", "node-every", 0, "node-count", 0)],
     inputs: [{ nodeId: "node-every", portSlot: 0 }],
-    outputs: [{ nodeId: "node-counter", portSlot: 0 }],
+    outputs: [{ nodeId: "node-count", portSlot: 0 }],
   });
 
-  assertDsl(group, "$0.every(2).counter(4).outlet(0)");
+  assertDsl(group, "$0.every(2).count(4).outlet(0)");
 });
 
 test("exportGroupDsl renders drop as a canonical single-stream chain node", () => {
@@ -170,7 +170,7 @@ test("exportGroupDsl renders simple cycles as recursive bindings", () => {
     id: "group-cycle",
     nodes: [
       createNode({ id: "node-a", type: "every", x: 0, y: 0, param: 3, name: "a" }),
-      createNode({ id: "node-b", type: "counter", x: 4, y: 0, param: 4, name: "b" }),
+      createNode({ id: "node-b", type: "count", x: 4, y: 0, param: 4, name: "b" }),
     ],
     edges: [
       createEdge("edge-a-b", "node-a", 0, "node-b", 0),
@@ -180,7 +180,7 @@ test("exportGroupDsl renders simple cycles as recursive bindings", () => {
     outputs: [{ nodeId: "node-b", portSlot: 0 }],
   });
 
-  assertDsl(group, "a = $0.every(3){b}\nb = a.counter(4)\nb.outlet(0)");
+  assertDsl(group, "a = $0.every(3){b}\nb = a.count(4)\nb.outlet(0)");
 });
 
 test("exportGroupDsl uses explicit-wire fallback for multi-port merge shapes", () => {
@@ -189,7 +189,7 @@ test("exportGroupDsl uses explicit-wire fallback for multi-port merge shapes", (
     nodes: [
       createNode({ id: "node-mux", type: "mux", x: 0, y: 0, name: "m" }),
       createNode({ id: "node-a", type: "every", x: 4, y: -2, param: 2, name: "a" }),
-      createNode({ id: "node-b", type: "counter", x: 4, y: 2, param: 4, name: "b" }),
+      createNode({ id: "node-b", type: "count", x: 4, y: 2, param: 4, name: "b" }),
       createNode({ id: "node-demux", type: "demux", x: 8, y: 0, name: "d" }),
     ],
     edges: [
@@ -207,7 +207,7 @@ test("exportGroupDsl uses explicit-wire fallback for multi-port merge shapes", (
     [
       "m = $0.mux()",
       "a = m[0].every(2)",
-      "b = m[1].counter(4)",
+      "b = m[1].count(4)",
       "d = demux()",
       "a.d[0]",
       "b.d[1]",
@@ -228,11 +228,11 @@ test("buildSemanticGroupIR expands nested groups inline and records provenance",
     id: "group-parent",
     nodes: [
       createNode({ id: "node-child", type: "group", x: 0, y: 0, groupRef: "group-child" }),
-      createNode({ id: "node-counter", type: "counter", x: 4, y: 0, param: 4 }),
+      createNode({ id: "node-count", type: "count", x: 4, y: 0, param: 4 }),
     ],
-    edges: [createEdge("edge-child-counter", "node-child", 0, "node-counter", 0)],
+    edges: [createEdge("edge-child-count", "node-child", 0, "node-count", 0)],
     inputs: [{ nodeId: "node-child", portSlot: 0 }],
-    outputs: [{ nodeId: "node-counter", portSlot: 0 }],
+    outputs: [{ nodeId: "node-count", portSlot: 0 }],
     controls: [{ nodeId: "node-child", controlSlot: 0 }],
   });
   const result = buildSemanticGroupIR(parent, registry, {
@@ -257,10 +257,10 @@ test("buildSemanticGroupIR expands nested groups inline and records provenance",
         sourceNodeId: "child-every",
       },
       {
-        id: "node-counter",
+        id: "node-count",
         kind: "local",
         groupPath: [],
-        sourceNodeId: "node-counter",
+        sourceNodeId: "node-count",
       },
     ],
   );
@@ -303,17 +303,17 @@ test("exportGroupDsl renders expanded nested groups without surfaced groupRef sy
     id: "group-parent",
     nodes: [
       createNode({ id: "node-child", type: "group", x: 0, y: 0, groupRef: "group-child" }),
-      createNode({ id: "node-counter", type: "counter", x: 4, y: 0, param: 4 }),
+      createNode({ id: "node-count", type: "count", x: 4, y: 0, param: 4 }),
     ],
-    edges: [createEdge("edge-child-counter", "node-child", 0, "node-counter", 0)],
+    edges: [createEdge("edge-child-count", "node-child", 0, "node-count", 0)],
     inputs: [{ nodeId: "node-child", portSlot: 0 }],
-    outputs: [{ nodeId: "node-counter", portSlot: 0 }],
+    outputs: [{ nodeId: "node-count", portSlot: 0 }],
     controls: [{ nodeId: "node-child", controlSlot: 0 }],
   });
 
   assertDsl(
     parent,
-    "$0.every(3){$1}.counter(4).outlet(0)",
+    "$0.every(3){$1}.count(4).outlet(0)",
     {
       groups: {
         "group-child": child,

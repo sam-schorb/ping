@@ -23,7 +23,7 @@ const RESERVED_BINDING_NAMES = new Set([
   "every",
   "drop",
   "random",
-  "counter",
+  "count",
   "gtp",
   "ltp",
   "gtep",

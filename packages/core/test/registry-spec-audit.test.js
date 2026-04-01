@@ -148,7 +148,7 @@ const EXPECTED_NODE_SPEC = Object.freeze({
     hasParam: true,
     defaultParam: 1,
   },
-  counter: {
+  count: {
     layout: "single-io-control",
     inputs: 1,
     outputs: 1,

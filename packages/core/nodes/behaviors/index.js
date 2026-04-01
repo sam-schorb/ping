@@ -163,13 +163,13 @@ export function randomSignal(ctx) {
   };
 }
 
-export function createCounterState() {
+export function createCountState() {
   return {
     count: 0,
   };
 }
 
-function normalizeCounterCount(rawCount, maxValue) {
+function normalizeCountCount(rawCount, maxValue) {
   let count = Number.isFinite(rawCount) ? Math.trunc(rawCount) : 0;
 
   if (count < 0) {
@@ -183,9 +183,9 @@ function normalizeCounterCount(rawCount, maxValue) {
   return count;
 }
 
-export function counterSignal(ctx) {
+export function countSignal(ctx) {
   const maxValue = clampDiscreteNodeValue(ctx.param, 8);
-  const count = normalizeCounterCount(ctx.state?.count, maxValue);
+  const count = normalizeCountCount(ctx.state?.count, maxValue);
   const nextCount = count >= maxValue ? 1 : count + 1;
 
   return {

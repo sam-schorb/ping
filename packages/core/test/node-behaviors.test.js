@@ -196,8 +196,8 @@ test("random uses the provided RNG and clamps to the current max parameter", () 
   assert.deepEqual(highRoll.outputs, [{ value: 5 }]);
 });
 
-test("counter wraps at its configured max and reapplies the new count to the incoming pulse", () => {
-  const node = getNodeDefinition("counter");
+test("count wraps at its configured max and reapplies the new count to the incoming pulse", () => {
+  const node = getNodeDefinition("count");
   let state = node.initState();
   const controlResult = node.onControl(
     createBehaviorContext({
