@@ -48,6 +48,7 @@ export const DEFAULT_UI_CONFIG = Object.freeze({
     radiusPx: 4,
     strokeWidthPx: 1,
     hoverRadiusPx: 8,
+    touchHoverRadiusPx: 18,
     signalIn: "#e45d5d",
     signalOut: "#f2c14e",
     control: "#4c8fd9",
@@ -55,6 +56,8 @@ export const DEFAULT_UI_CONFIG = Object.freeze({
   edge: {
     strokeWidthPx: 2,
     hoverWidthPx: 10,
+    touchHitTolerancePx: 18,
+    touchCornerHitRadiusPx: 18,
     cornerRadiusPx: 8,
     previewDash: "4 3",
     mutedOpacity: 0.35,
@@ -95,6 +98,7 @@ export const DEFAULT_UI_CONFIG = Object.freeze({
   },
   interaction: {
     dragThresholdPx: 3,
+    touchDragThresholdPx: 6,
     doubleClickMs: 250,
     panSpeed: 1,
     zoomStep: 0.1,

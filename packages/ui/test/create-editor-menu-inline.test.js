@@ -506,6 +506,8 @@ test("creating a param node auto-focuses the inline param field with the default
     const inlineParamInput = harness.query("inline-param-node-1");
 
     assert.ok(inlineParamInput);
+    assert.equal(inlineParamInput.getAttribute("id"), "inline-param-node-1");
+    assert.equal(inlineParamInput.getAttribute("name"), "inline-param-node-1");
     assert.equal(dom.window.document.activeElement, inlineParamInput);
     assert.equal(inlineParamInput.value, "1");
     assert.equal(inlineParamInput.selectionStart, 0);
@@ -589,11 +591,17 @@ test("inline param field pulses with the node body even while focused", async ()
     inlineParamInput.focus();
     await harness.flush(2);
 
+    assert.equal(inlineParamInput.getAttribute("id"), "inline-param-node-a");
+    assert.equal(inlineParamInput.getAttribute("name"), "inline-param-node-a");
     assert.equal(dom.window.document.activeElement, inlineParamInput);
     assert.match(
       inlineParamInput.getAttribute("style") ?? "",
       /transform:scale\(1\.\d{4}\);transform-origin:[^;]+;/,
     );
+
+    const refreshedInlineParamInput = harness.query("inline-param-node-a");
+    assert.equal(refreshedInlineParamInput.getAttribute("id"), "inline-param-node-a");
+    assert.equal(refreshedInlineParamInput.getAttribute("name"), "inline-param-node-a");
 
     harness.unmount();
   } finally {

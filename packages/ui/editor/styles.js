@@ -127,6 +127,8 @@ export function createStyles(config) {
         height: 100%;
       }
       .ping-editor__toolbar {
+        position: relative;
+        z-index: 8;
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
@@ -138,6 +140,7 @@ export function createStyles(config) {
         border-bottom: 1px solid var(--ping-chrome-border-strong);
         background: var(--ping-chrome-shell);
         backdrop-filter: blur(18px);
+        overflow: visible;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
         transition: padding-inline-end 160ms ease;
       }
@@ -195,6 +198,23 @@ export function createStyles(config) {
       .ping-editor__toolbar-docs-button {
         display: none;
       }
+      .ping-editor__toolbar-rotate-button {
+        display: none;
+      }
+      .ping-editor__toolbar-delete-button {
+        display: none;
+      }
+      .ping-editor__toolbar-cancel-cable-button {
+        display: none;
+      }
+      .ping-editor__toolbar-tempo {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+      }
+      .ping-editor__toolbar .ping-editor__toolbar-tempo-button {
+        display: none;
+      }
       .ping-editor__field.ping-editor__toolbar-field {
         display: inline-flex;
         align-items: center;
@@ -211,6 +231,49 @@ export function createStyles(config) {
         margin: 0;
         accent-color: var(--ping-chrome-accent);
         cursor: pointer;
+      }
+      .ping-editor__tempo-popover {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        z-index: 18;
+        min-width: 184px;
+        padding: 10px 12px 12px;
+        border: 1px solid var(--ping-chrome-border-strong);
+        border-radius: 14px;
+        background: linear-gradient(180deg, rgba(255, 252, 247, 0.98), rgba(255, 240, 229, 0.95));
+        box-shadow:
+          0 16px 30px var(--ping-chrome-shadow),
+          inset 0 1px 0 rgba(255, 255, 255, 0.32);
+        backdrop-filter: blur(16px);
+      }
+      .ping-editor__tempo-popover::before {
+        content: "";
+        position: absolute;
+        top: -6px;
+        right: 14px;
+        width: 12px;
+        height: 12px;
+        border-top: 1px solid var(--ping-chrome-border-strong);
+        border-left: 1px solid var(--ping-chrome-border-strong);
+        background: rgba(255, 249, 243, 0.98);
+        transform: rotate(45deg);
+      }
+      .ping-editor__tempo-popover-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 9px;
+      }
+      .ping-editor__tempo-popover-title {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ping-chrome-ink-muted);
+      }
+      .ping-editor__tempo-popover-slider {
+        width: 100%;
+        min-width: 0;
       }
       .ping-editor__viewport-shell {
         position: relative;
@@ -1106,6 +1169,15 @@ export function createStyles(config) {
         .ping-editor__toolbar-docs-button {
           display: inline-flex;
         }
+        .ping-editor__toolbar-rotate-button {
+          display: inline-flex;
+        }
+        .ping-editor__toolbar-delete-button {
+          display: inline-flex;
+        }
+        .ping-editor__toolbar-cancel-cable-button {
+          display: inline-flex;
+        }
         .ping-editor__viewport-shell {
           min-height: clamp(480px, 72vw, 640px);
         }
@@ -1168,6 +1240,12 @@ export function createStyles(config) {
           min-height: 22px;
           padding: 2px 7px;
         }
+        .ping-editor__toolbar .ping-editor__toolbar-tempo-button {
+          display: inline-flex;
+        }
+        .ping-editor__field.ping-editor__toolbar-tempo-field {
+          display: none;
+        }
         .ping-editor__toolbar .ping-editor__icon-button {
           width: 22px;
           height: 22px;
@@ -1179,12 +1257,17 @@ export function createStyles(config) {
         .ping-editor__toolbar-label {
           display: none;
         }
-        .ping-editor__toolbar-docs-button .ping-editor__toolbar-button-label {
-          display: inline;
-        }
         .ping-editor__toolbar-slider {
           width: clamp(72px, 24vw, 96px);
           min-width: 0;
+        }
+        .ping-editor__toolbar-slider.ping-editor__tempo-popover-slider {
+          width: 100%;
+        }
+        .ping-editor__tempo-popover {
+          right: -8px;
+          min-width: 172px;
+          padding: 9px 10px 10px;
         }
         .ping-editor__menu {
           border-radius: 24px;

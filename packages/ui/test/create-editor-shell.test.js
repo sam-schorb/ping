@@ -519,16 +519,49 @@ test("editor orders the built-in sidebar tabs and uses compact history controls"
     const docsToolbarButton = harness.query("docs-toolbar-button");
     assert.equal(docsToolbarButton.querySelector(".ping-editor__toolbar-button-label")?.textContent.trim(), "Docs");
     assert.ok(docsToolbarButton.querySelector(".ping-editor__toolbar-button-icon svg"));
+    const rotateToolbarButton = harness.query("rotate-toolbar-button");
+    assert.equal(
+      rotateToolbarButton.querySelector(".ping-editor__toolbar-button-label")?.textContent.trim(),
+      "Rotate",
+    );
+    assert.ok(rotateToolbarButton.querySelector(".ping-editor__toolbar-button-icon svg"));
+    assert.equal(rotateToolbarButton.hasAttribute("disabled"), true);
+    const deleteToolbarButton = harness.query("delete-toolbar-button");
+    assert.equal(
+      deleteToolbarButton.querySelector(".ping-editor__toolbar-button-label")?.textContent.trim(),
+      "Delete",
+    );
+    assert.ok(deleteToolbarButton.querySelector(".ping-editor__toolbar-button-icon svg"));
+    assert.equal(deleteToolbarButton.hasAttribute("disabled"), true);
     assert.equal(harness.query("reset-pulses").textContent.trim(), "Reset");
     assert.ok(harness.query("reset-pulses").querySelector(".ping-editor__toolbar-button-icon svg"));
     assert.equal(
       harness.query("reset-pulses").nextElementSibling?.classList.contains("ping-editor__toolbar-field"),
-      true,
+      false,
     );
     assert.equal(
       harness.query("tempo-input").closest("label")?.classList.contains("ping-editor__toolbar-field"),
       true,
     );
+    assert.equal(
+      harness.query("tempo-popover-button").querySelector(".ping-editor__toolbar-button-label")?.textContent.trim(),
+      "Tempo",
+    );
+    assert.ok(harness.query("tempo-popover-button").querySelector(".ping-editor__toolbar-button-icon svg"));
+    assert.equal(harness.container.querySelector('[data-testid="tempo-popover"]'), null);
+    const toolbarActions = [...harness.container.querySelectorAll(".ping-editor__toolbar [data-action]")].map((node) =>
+      node.getAttribute("data-action"),
+    );
+    assert.deepEqual(toolbarActions.slice(0, 8), [
+      "request-undo",
+      "request-redo",
+      "open-menu",
+      "open-group-config",
+      "delete-selection",
+      "rotate-selection",
+      "reset-pulses",
+      "open-docs-sidebar",
+    ]);
     assert.equal(harness.container.querySelector('[data-testid="selection-label"]'), null);
 
     const styles = harness.container.querySelector("[data-ping-editor-style]").textContent;
@@ -562,7 +595,35 @@ test("editor orders the built-in sidebar tabs and uses compact history controls"
     );
     assert.match(
       styles,
+      /\.ping-editor__toolbar\s+\.ping-editor__toolbar-tempo-button\s*\{[\s\S]*display:\s*none;/,
+    );
+    assert.match(
+      styles,
+      /\.ping-editor__tempo-popover\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*calc\(100% \+ 8px\);[\s\S]*right:\s*0;[\s\S]*min-width:\s*184px;/,
+    );
+    assert.match(
+      styles,
       /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__toolbar\s*\{[\s\S]*padding-inline-end:\s*10px;/,
+    );
+    assert.match(
+      styles,
+      /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__toolbar-docs-button\s*\{[\s\S]*display:\s*inline-flex;/,
+    );
+    assert.match(
+      styles,
+      /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__toolbar-rotate-button\s*\{[\s\S]*display:\s*inline-flex;/,
+    );
+    assert.match(
+      styles,
+      /@media \(max-width:\s*720px\)\s*\{[\s\S]*\.ping-editor__toolbar\s+\.ping-editor__toolbar-tempo-button\s*\{[\s\S]*display:\s*inline-flex;/,
+    );
+    assert.match(
+      styles,
+      /@media \(max-width:\s*720px\)\s*\{[\s\S]*\.ping-editor__field\.ping-editor__toolbar-tempo-field\s*\{[\s\S]*display:\s*none;/,
+    );
+    assert.match(
+      styles,
+      /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__toolbar-delete-button\s*\{[\s\S]*display:\s*inline-flex;/,
     );
     assert.match(
       styles,
@@ -658,6 +719,95 @@ test("docs tab renders alphabetical categories, sorted entries, and jump tags", 
     harness.click(harness.query("docs-tag-all"));
     await harness.flush();
     assert.equal(panelScroll.scrollTop, 0);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("sidebar docs interactions do not leak into canvas selection or marquee state", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [{ id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } }],
+        edges: [],
+        groups: {},
+      },
+      selection: { kind: "node", nodeId: "node-a" },
+    });
+    await harness.flush();
+
+    harness.click(harness.container.querySelector('[data-tab="docs"]'));
+    await harness.flush();
+
+    const docsCopy = harness
+      .query("docs-entry-pulse")
+      .querySelector(".ping-editor__docs-entry-copy");
+
+    harness.pointerDown(docsCopy, { clientX: 1100, clientY: 180 });
+    harness.pointerMove(docsCopy, { clientX: 1120, clientY: 220 });
+    await harness.flush();
+
+    assert.equal(harness.container.querySelector(".ping-editor__selection-box"), null);
+
+    harness.pointerUp({ clientX: 1120, clientY: 220 });
+    await harness.flush();
+
+    assert.deepEqual(harness.selection, { kind: "node", nodeId: "node-a" });
+    assert.equal(harness.container.querySelector(".ping-editor__selection-box"), null);
+
+    harness.click(docsCopy);
+    await harness.flush();
+
+    assert.deepEqual(harness.selection, { kind: "node", nodeId: "node-a" });
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("narrow layouts start with the sidebar collapsed and use the metronome tempo popover", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      containerRectWidth: 680,
+    });
+    await harness.flush();
+
+    assert.equal(harness.query("editor-sidebar").classList.contains("is-collapsed"), true);
+    assert.equal(harness.query("sidebar-toggle").getAttribute("aria-label"), "Open sidebar");
+
+    const styles = harness.container.querySelector("[data-ping-editor-style]").textContent;
+    assert.match(
+      styles,
+      /@media \(max-width:\s*720px\)\s*\{[\s\S]*\.ping-editor__toolbar\s+\.ping-editor__toolbar-tempo-button\s*\{[\s\S]*display:\s*inline-flex;/,
+    );
+    assert.match(
+      styles,
+      /@media \(max-width:\s*720px\)\s*\{[\s\S]*\.ping-editor__field\.ping-editor__toolbar-tempo-field\s*\{[\s\S]*display:\s*none;/,
+    );
+
+    harness.click(harness.query("tempo-popover-button"));
+    await harness.flush();
+
+    assert.ok(harness.query("tempo-popover"));
+    assert.equal(harness.query("tempo-popover-button").getAttribute("aria-expanded"), "true");
+    assert.equal(harness.container.querySelector('[data-testid="tempo-popover-value"]'), null);
+
+    const popoverInput = harness.query("tempo-popover-input");
+    popoverInput.value = "42";
+    popoverInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await harness.flush();
+
+    assert.equal(harness.outputs.at(-1)?.type, "audio/updateTempo");
+    assert.equal(harness.outputs.at(-1)?.payload?.bpm, 42);
+    assert.equal(harness.query("tempo-input").value, "42");
+    assert.equal(harness.query("tempo-popover-input").value, "42");
 
     harness.unmount();
   } finally {

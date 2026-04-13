@@ -210,6 +210,8 @@ export function createInlineParamController({ state, markViewportDirty, handleSe
           <input
             class="ping-editor__inline-param"
             type="text"
+            id="inline-param-${escapeHtml(node.id)}"
+            name="inline-param-${escapeHtml(node.id)}"
             inputmode="numeric"
             autocomplete="off"
             spellcheck="false"
@@ -305,6 +307,22 @@ export function createInlineParamController({ state, markViewportDirty, handleSe
     };
   }
 
+  function parseInlineParamInputValue(value) {
+    const trimmed = String(value ?? "").trim();
+
+    if (trimmed === "") {
+      return null;
+    }
+
+    const numeric = Number(trimmed);
+
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+
+    return clampParamInput(numeric);
+  }
+
   function commitInlineParamValue(nodeId, value) {
     const node = state.snapshot.nodes.find((entry) => entry.id === nodeId);
     const definition = node ? getInlineParamNodeDefinition(node) : null;
@@ -313,15 +331,21 @@ export function createInlineParamController({ state, markViewportDirty, handleSe
       return;
     }
 
-    const normalizedValue = clampParamInput(value);
+    const normalizedValue = parseInlineParamInputValue(value);
     const currentValue = Number(node.params?.param ?? definition.defaultParam ?? 1);
+
+    if (normalizedValue === null) {
+      markViewportDirty({ inlineParamLayer: true });
+      return false;
+    }
 
     if (currentValue === normalizedValue) {
       markViewportDirty({ inlineParamLayer: true });
-      return;
+      return true;
     }
 
     handleSetParam(nodeId, normalizedValue);
+    return true;
   }
 
   function cancelInlineParamEdit(nodeId) {

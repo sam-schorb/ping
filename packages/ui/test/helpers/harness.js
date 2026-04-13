@@ -27,7 +27,7 @@ export const TEST_REGISTRY = Object.freeze({
 export const TEST_PALETTE = buildPalette();
 
 function createPointerEvent(window, type, options = {}) {
-  return new window.MouseEvent(type, {
+  const event = new window.MouseEvent(type, {
     bubbles: true,
     cancelable: true,
     button: options.button ?? 0,
@@ -38,6 +38,23 @@ function createPointerEvent(window, type, options = {}) {
     ctrlKey: options.ctrlKey ?? false,
     metaKey: options.metaKey ?? false,
   });
+
+  Object.defineProperties(event, {
+    pointerId: {
+      configurable: true,
+      value: options.pointerId ?? 1,
+    },
+    pointerType: {
+      configurable: true,
+      value: options.pointerType ?? "mouse",
+    },
+    isPrimary: {
+      configurable: true,
+      value: options.isPrimary ?? true,
+    },
+  });
+
+  return event;
 }
 
 export async function flushFrames(window, count = 3) {
@@ -87,6 +104,9 @@ export function setupDom() {
   });
 
   const originalRect = window.HTMLElement.prototype.getBoundingClientRect;
+  const originalSetPointerCapture = window.HTMLElement.prototype.setPointerCapture;
+  const originalReleasePointerCapture = window.HTMLElement.prototype.releasePointerCapture;
+  const originalHasPointerCapture = window.HTMLElement.prototype.hasPointerCapture;
 
   window.HTMLElement.prototype.getBoundingClientRect = function getBoundingClientRect() {
     if (this.dataset?.rectWidth || this.dataset?.rectHeight) {
@@ -116,6 +136,21 @@ export function setupDom() {
     };
   };
 
+  window.HTMLElement.prototype.setPointerCapture = function setPointerCapture(pointerId) {
+    if (!this.__capturedPointerIds) {
+      this.__capturedPointerIds = new Set();
+    }
+    this.__capturedPointerIds.add(pointerId);
+  };
+
+  window.HTMLElement.prototype.releasePointerCapture = function releasePointerCapture(pointerId) {
+    this.__capturedPointerIds?.delete?.(pointerId);
+  };
+
+  window.HTMLElement.prototype.hasPointerCapture = function hasPointerCapture(pointerId) {
+    return Boolean(this.__capturedPointerIds?.has?.(pointerId));
+  };
+
   const originalRaf = window.requestAnimationFrame.bind(window);
   const originalCancelRaf = window.cancelAnimationFrame.bind(window);
   let rafId = 1;
@@ -141,6 +176,21 @@ export function setupDom() {
     window,
     cleanup() {
       window.HTMLElement.prototype.getBoundingClientRect = originalRect;
+      if (originalSetPointerCapture) {
+        window.HTMLElement.prototype.setPointerCapture = originalSetPointerCapture;
+      } else {
+        delete window.HTMLElement.prototype.setPointerCapture;
+      }
+      if (originalReleasePointerCapture) {
+        window.HTMLElement.prototype.releasePointerCapture = originalReleasePointerCapture;
+      } else {
+        delete window.HTMLElement.prototype.releasePointerCapture;
+      }
+      if (originalHasPointerCapture) {
+        window.HTMLElement.prototype.hasPointerCapture = originalHasPointerCapture;
+      } else {
+        delete window.HTMLElement.prototype.hasPointerCapture;
+      }
       window.requestAnimationFrame = originalRaf;
       window.cancelAnimationFrame = originalCancelRaf;
       dom.window.close();
@@ -211,8 +261,8 @@ export function createEditorHarness(options = {}) {
   });
   const outputs = [];
   const container = document.createElement("div");
-  container.dataset.rectWidth = "1280";
-  container.dataset.rectHeight = "860";
+  container.dataset.rectWidth = String(options.containerRectWidth ?? 1280);
+  container.dataset.rectHeight = String(options.containerRectHeight ?? 860);
   document.body.append(container);
   let selection = options.selection ?? { kind: "none" };
   let slots = createDefaultSampleSlots();
@@ -330,10 +380,17 @@ export function createEditorHarness(options = {}) {
     pointerMove(element, options = {}) {
       element.dispatchEvent(createPointerEvent(window, "pointermove", options));
     },
+    pointerCancel(targetOrOptions = {}, options = {}) {
+      const hasTarget = targetOrOptions && typeof targetOrOptions.dispatchEvent === "function";
+      const target = hasTarget ? targetOrOptions : window;
+      const eventOptions = hasTarget ? options : targetOrOptions;
+      target.dispatchEvent(createPointerEvent(window, "pointercancel", eventOptions));
+    },
     pointerUp(targetOrOptions = {}, options = {}) {
       const hasTarget = targetOrOptions && typeof targetOrOptions.dispatchEvent === "function";
+      const target = hasTarget ? targetOrOptions : window;
       const eventOptions = hasTarget ? options : targetOrOptions;
-      window.dispatchEvent(createPointerEvent(window, "pointerup", eventOptions));
+      target.dispatchEvent(createPointerEvent(window, "pointerup", eventOptions));
     },
     async flush(count = 3) {
       await flushFrames(window, count);

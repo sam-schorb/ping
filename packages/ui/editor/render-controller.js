@@ -1,7 +1,9 @@
-import { FaArrowLeftLong, FaArrowRightLong, FaObjectGroup } from "react-icons/fa6";
+import { FaArrowLeftLong, FaArrowRightLong, FaObjectGroup, FaRegTrashCan } from "react-icons/fa6";
 import { GrPowerReset } from "react-icons/gr";
 import { IoIosHelpCircle } from "react-icons/io";
 import { IoMdAdd } from "react-icons/io";
+import { RiClockwise2Line, RiCloseLine } from "react-icons/ri";
+import { TbMetronome } from "react-icons/tb";
 
 import {
   focusElementWithoutScroll,
@@ -113,6 +115,9 @@ export function createRenderController({
     state.selection = selection;
     syncInspectDslDraft();
     const cursor = getViewportCursor();
+    const hasDeletableSelection = selection.kind !== "none" || state.groupSelection.nodeIds.length > 0;
+    const hasRotatableSelection = selection.kind === "node";
+    const showTouchCancelCable = state.drag.kind === "edge-create";
 
     state.root.innerHTML = `
       ${createStyles(state.config)}
@@ -149,16 +154,22 @@ export function createRenderController({
               </button>
             </div>
             <div class="ping-editor__toolbar-group">
-              <button
-                class="ping-editor__panel-button ping-editor__toolbar-docs-button"
-                type="button"
-                data-action="open-docs-sidebar"
-                data-testid="docs-toolbar-button"
-                aria-label="Docs"
-                title="Docs"
-              >
-                ${renderToolbarButtonContent("Docs", IoIosHelpCircle)}
-              </button>
+              ${
+                showTouchCancelCable
+                  ? `
+                    <button
+                      class="ping-editor__panel-button ping-editor__toolbar-cancel-cable-button"
+                      type="button"
+                      data-action="cancel-edge-create"
+                      data-testid="cancel-cable-button"
+                      aria-label="Cancel Cable"
+                      title="Cancel Cable"
+                    >
+                      ${renderToolbarButtonContent("Cancel Cable", RiCloseLine)}
+                    </button>
+                  `
+                  : ""
+              }
               <button
                 class="ping-editor__panel-button is-primary"
                 type="button"
@@ -177,6 +188,28 @@ export function createRenderController({
               >
                 ${renderToolbarButtonContent("Create Group", FaObjectGroup)}
               </button>
+              <button
+                class="ping-editor__panel-button ping-editor__toolbar-delete-button"
+                type="button"
+                data-action="delete-selection"
+                data-testid="delete-toolbar-button"
+                aria-label="Delete"
+                title="Delete"
+                ${hasDeletableSelection ? "" : "disabled"}
+              >
+                ${renderToolbarButtonContent("Delete", FaRegTrashCan)}
+              </button>
+              <button
+                class="ping-editor__panel-button ping-editor__toolbar-rotate-button"
+                type="button"
+                data-action="rotate-selection"
+                data-testid="rotate-toolbar-button"
+                aria-label="Rotate"
+                title="Rotate"
+                ${hasRotatableSelection ? "" : "disabled"}
+              >
+                ${renderToolbarButtonContent("Rotate", RiClockwise2Line)}
+              </button>
             </div>
             <div class="ping-editor__toolbar-group">
               <button
@@ -189,20 +222,65 @@ export function createRenderController({
               >
                 ${renderToolbarButtonContent("Reset", GrPowerReset)}
               </button>
-              <label class="ping-editor__field ping-editor__toolbar-field">
-                <span class="ping-editor__toolbar-label">Tempo</span>
-                <input
-                  class="ping-editor__toolbar-slider"
-                  type="range"
-                  name="tempo"
-                  min="1"
-                  max="100"
-                  step="1"
-                  value="${escapeHtml(state.tempo)}"
-                  data-action="tempo"
-                  data-testid="tempo-input"
-                />
-              </label>
+              <button
+                class="ping-editor__panel-button ping-editor__toolbar-docs-button"
+                type="button"
+                data-action="open-docs-sidebar"
+                data-testid="docs-toolbar-button"
+                aria-label="Docs"
+                title="Docs"
+              >
+                ${renderToolbarButtonContent("Docs", IoIosHelpCircle)}
+              </button>
+              <div class="ping-editor__toolbar-tempo">
+                <label class="ping-editor__field ping-editor__toolbar-field ping-editor__toolbar-tempo-field">
+                  <span class="ping-editor__toolbar-label">Tempo</span>
+                  <input
+                    class="ping-editor__toolbar-slider"
+                    type="range"
+                    name="tempo"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value="${escapeHtml(state.tempo)}"
+                    data-action="tempo"
+                    data-testid="tempo-input"
+                  />
+                </label>
+                <button
+                  class="ping-editor__panel-button ping-editor__toolbar-tempo-button"
+                  type="button"
+                  data-action="toggle-tempo-popover"
+                  data-testid="tempo-popover-button"
+                  aria-label="Tempo"
+                  aria-expanded="${state.tempoPopoverOpen ? "true" : "false"}"
+                  title="Tempo"
+                >
+                  ${renderToolbarButtonContent("Tempo", TbMetronome)}
+                </button>
+                ${
+                  state.tempoPopoverOpen
+                    ? `
+                      <div class="ping-editor__tempo-popover" data-tempo-popover data-testid="tempo-popover">
+                        <div class="ping-editor__tempo-popover-header">
+                          <span class="ping-editor__tempo-popover-title">Tempo</span>
+                        </div>
+                        <input
+                          class="ping-editor__toolbar-slider ping-editor__tempo-popover-slider"
+                          type="range"
+                          name="tempo"
+                          min="1"
+                          max="100"
+                          step="1"
+                          value="${escapeHtml(state.tempo)}"
+                          data-action="tempo"
+                          data-testid="tempo-popover-input"
+                        />
+                      </div>
+                    `
+                    : ""
+                }
+              </div>
             </div>
           </div>
           <div class="ping-editor__viewport-shell">

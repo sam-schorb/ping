@@ -5,7 +5,7 @@ import { DEFAULT_PALETTE_MENU_CATEGORY_ID } from "../panels/palette.js";
 import { getViewportSize } from "../render/panzoom.js";
 import { createCanvasController } from "./canvas-controller.js";
 import { focusElementWithoutScroll } from "./focus-state.js";
-import { clampCamera, clampParamInput, snapWorldPoint } from "./geometry.js";
+import { clampCamera, clampParamInput, getNodeWorldBounds, snapWorldPoint } from "./geometry.js";
 import { createGroupDraft, createGroupEditDraft } from "./group-config.js";
 import { createInlineParamController } from "./inline-param.js";
 import { createInputController } from "./input-controller.js";
@@ -59,6 +59,8 @@ import {
 
 export function createEditor({ registry, runtime, onOutput, onSidebarAction, sidebarExtensions, config }) {
   const resolvedConfig = mergeUIConfig(undefined, config ?? {});
+  const SIDEBAR_COLLAPSE_BREAKPOINT_PX = 1180;
+  const COMPACT_TOOLBAR_BREAKPOINT_PX = 720;
   const state = {
     registry,
     runtime,
@@ -78,6 +80,8 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     hover: createEmptyHover(),
     drag: createEmptyDragState(),
     pan: null,
+    touchGesture: { kind: "none" },
+    touchPointers: new Map(),
     camera: createDefaultCamera(),
     viewportSize: createViewportFallback(),
     sampleFileLabels: new Map(),
@@ -93,9 +97,12 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     },
     sidebarExtensions: normalizeSidebarExtensions(sidebarExtensions),
     sidebarCollapsed: false,
+    sidebarAutoMode: true,
+    sidebarResponsiveInitialized: false,
     activeTab: "console",
     slots: createDefaultSampleSlots(),
     tempo: DEFAULT_TEMPO_BPM,
+    tempoPopoverOpen: false,
     thumbs: [],
     nodePulseStates: [],
     frameId: null,
@@ -117,6 +124,8 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     boxSelection: null,
     lastPointerWorld: { x: 2, y: 2 },
     lastPointerScreen: { x: 48, y: 48 },
+    lastPointerPointerId: 1,
+    lastPointerType: "mouse",
     nodePositionOverrides: new Map(),
     pointerPress: null,
     dragStarted: false,
@@ -169,9 +178,19 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     const changed = nextTempo !== state.tempo;
     state.tempo = nextTempo;
 
-    const tempoInput =
-      control?.matches?.("[data-action='tempo']") ? control : state.root?.querySelector("[data-action='tempo']");
-    syncRangeValue(tempoInput, nextTempo);
+    const tempoInputs = state.root?.querySelectorAll?.("[data-action='tempo']") ?? [];
+
+    for (const tempoInput of tempoInputs) {
+      if (tempoInput === control || !tempoInput?.matches?.("[data-action='tempo']")) {
+        continue;
+      }
+
+      syncRangeValue(tempoInput, nextTempo);
+    }
+
+    if (control?.matches?.("[data-action='tempo']")) {
+      syncRangeValue(control, nextTempo);
+    }
 
     if (changed && emit) {
       emitOutput({
@@ -372,6 +391,31 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     const size = getViewportSize(state.viewport);
 
     if (size.width > 0 && size.height > 0) {
+      const responsiveWidth = state.root?.getBoundingClientRect?.().width ?? size.width;
+      let responsiveChanged = false;
+
+      if (state.sidebarAutoMode && !state.sidebarResponsiveInitialized) {
+        const nextCollapsed = responsiveWidth <= SIDEBAR_COLLAPSE_BREAKPOINT_PX;
+
+        if (state.sidebarCollapsed !== nextCollapsed) {
+          state.sidebarCollapsed = nextCollapsed;
+          responsiveChanged = true;
+        }
+        state.sidebarResponsiveInitialized = true;
+      } else if (state.sidebarAutoMode) {
+        const nextCollapsed = responsiveWidth <= SIDEBAR_COLLAPSE_BREAKPOINT_PX;
+
+        if (state.sidebarCollapsed !== nextCollapsed) {
+          state.sidebarCollapsed = nextCollapsed;
+          responsiveChanged = true;
+        }
+      }
+
+      if (responsiveWidth > COMPACT_TOOLBAR_BREAKPOINT_PX && state.tempoPopoverOpen) {
+        state.tempoPopoverOpen = false;
+        responsiveChanged = true;
+      }
+
       const nextCamera = clampCamera(state.camera, size, state.config);
       const sizeChanged =
         state.viewportSize.width !== size.width || state.viewportSize.height !== size.height;
@@ -380,7 +424,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
         state.camera.y !== nextCamera.y ||
         state.camera.scale !== nextCamera.scale;
 
-      if (sizeChanged || cameraChanged) {
+      if (sizeChanged || cameraChanged || responsiveChanged) {
         state.viewportSize = size;
         state.camera = nextCamera;
         markDirty();
@@ -388,21 +432,91 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     }
   }
 
-  function getNextCreatePosition() {
-    const step = 4;
+  function getNextCreatePosition(candidateNodeTemplate = null) {
     const base = state.menu.open
       ? state.menu.world
       : state.lastPointerWorld ?? getViewportCenterWorld();
-    const offset = state.creationOffset;
-    state.creationOffset += 1;
+    const step = 4;
+    const maxCandidates = 256;
 
-    return snapWorldPoint(
-      {
-        x: base.x + offset * step,
-        y: base.y + (offset % 2 === 0 ? 0 : 2),
-      },
-      state.config,
-    );
+    function getSpiralOffset(index) {
+      if (index === 0) {
+        return { x: 0, y: 0 };
+      }
+
+      let x = 0;
+      let y = 0;
+      let segmentLength = 1;
+      let traversed = 0;
+      const directions = [
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+        { x: -1, y: 0 },
+        { x: 0, y: -1 },
+      ];
+
+      for (let directionIndex = 0; traversed < index; directionIndex = (directionIndex + 1) % directions.length) {
+        const direction = directions[directionIndex];
+
+        for (let stepIndex = 0; stepIndex < segmentLength && traversed < index; stepIndex += 1) {
+          x += direction.x * step;
+          y += direction.y * step;
+          traversed += 1;
+        }
+
+        if (directionIndex % 2 === 1) {
+          segmentLength += 1;
+        }
+      }
+
+      return { x, y };
+    }
+
+    function intersectsExistingNode(candidateNode) {
+      const candidateBounds = getNodeWorldBounds(state.snapshot, candidateNode, state.registry);
+
+      return state.snapshot.nodes.some((existingNode) => {
+        const existingBounds = getNodeWorldBounds(state.snapshot, existingNode, state.registry);
+
+        return (
+          candidateBounds.x < existingBounds.x + existingBounds.width &&
+          candidateBounds.x + candidateBounds.width > existingBounds.x &&
+          candidateBounds.y < existingBounds.y + existingBounds.height &&
+          candidateBounds.y + candidateBounds.height > existingBounds.y
+        );
+      });
+    }
+
+    for (
+      let candidateIndex = state.creationOffset;
+      candidateIndex < state.creationOffset + maxCandidates;
+      candidateIndex += 1
+    ) {
+      const offset = getSpiralOffset(candidateIndex);
+      const candidatePosition = snapWorldPoint(
+        {
+          x: base.x + offset.x,
+          y: base.y + offset.y,
+        },
+        state.config,
+      );
+      const candidateNode = {
+        id: "__candidate__",
+        type: candidateNodeTemplate?.type ?? "out",
+        groupRef: candidateNodeTemplate?.groupRef,
+        pos: candidatePosition,
+        rot: candidateNodeTemplate?.rot ?? 0,
+        params: candidateNodeTemplate?.params ?? {},
+      };
+
+      if (!intersectsExistingNode(candidateNode)) {
+        state.creationOffset = candidateIndex + 1;
+        return candidatePosition;
+      }
+    }
+
+    state.creationOffset += 1;
+    return snapWorldPoint(base, state.config);
   }
 
   function emitUndo(reason) {
@@ -477,11 +591,18 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
   }
 
   function createGroupNodeRecord(groupRef) {
+    const candidateNodeTemplate = {
+      type: "group",
+      groupRef,
+      rot: 0,
+      params: {},
+    };
+
     return {
       id: createEditorId("node"),
       type: "group",
       groupRef,
-      pos: getNextCreatePosition(),
+      pos: getNextCreatePosition(candidateNodeTemplate),
       rot: 0,
       params: {},
     };
@@ -498,7 +619,15 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
 
     const node = groupRef
       ? createGroupNodeRecord(groupRef)
-      : createNodeRecord(createEditorId("node"), definition, getNextCreatePosition());
+      : createNodeRecord(
+          createEditorId("node"),
+          definition,
+          getNextCreatePosition({
+            type: definition.type,
+            rot: 0,
+            params: { param: definition.defaultParam ?? 1 },
+          }),
+        );
 
     if (!groupRef && definition?.hasParam) {
       const value = String(node.params?.param ?? definition.defaultParam ?? 1);
@@ -550,9 +679,9 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     }
 
     emitUndo("delete selection");
-    emitGraphOps(ops, "delete selection");
     clearNodeSetSelection();
     emitSelection(createEmptySelection());
+    emitGraphOps(ops, "delete selection");
   }
 
   function handleRenameNode(nodeId, name) {
@@ -841,7 +970,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       groupId,
       groupName: state.groupDraft.name.trim() || groupId,
       groupNodeId,
-      groupPosition: getNextCreatePosition(),
+      groupPosition: getNextCreatePosition({ type: "group", rot: 0, params: {} }),
       mappings: state.groupDraft.mappings,
       preserveInternalCableDelays: state.groupDraft.preserveInternalCableDelays,
     });
@@ -949,6 +1078,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     handleCreateNode,
     handleRotateSelection,
     handleDeleteSelection,
+    handleCancelEdgeCreate: canvasController.cancelEdgeCreate,
     handleRenameNode,
     handleSetParam,
     handleGroupOpen,
@@ -1001,6 +1131,12 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
   function mount(element) {
     state.root = element;
     state.mounted = true;
+    const initialWidth = element.getBoundingClientRect?.().width ?? 0;
+
+    if (state.sidebarAutoMode && initialWidth > 0) {
+      state.sidebarCollapsed = initialWidth <= SIDEBAR_COLLAPSE_BREAKPOINT_PX;
+      state.sidebarResponsiveInitialized = true;
+    }
     renderController.render();
     updateViewportSize();
 
@@ -1012,6 +1148,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     state.root.addEventListener("keydown", inputController.handleKeyDown);
     state.root.addEventListener("pointerdown", canvasController.handlePointerDown);
     state.root.addEventListener("pointermove", canvasController.handlePointerMove);
+    state.root.addEventListener("pointercancel", canvasController.handlePointerCancel);
     state.root.addEventListener("contextmenu", canvasController.handleContextMenu);
     state.root.addEventListener("wheel", canvasController.handleWheel, { passive: false });
     state.root.ownerDocument.addEventListener("keydown", inputController.handleDocumentKeyDown);
@@ -1019,6 +1156,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     state.root.ownerDocument.addEventListener("cut", inputController.handleCut);
     state.root.ownerDocument.addEventListener("paste", inputController.handlePaste);
     window.addEventListener("pointerup", canvasController.handlePointerUp);
+    window.addEventListener("pointercancel", canvasController.handlePointerCancel);
     window.addEventListener("resize", updateViewportSize);
     state.frameId = window.requestAnimationFrame(renderController.tick);
   }
@@ -1038,6 +1176,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     state.root.removeEventListener("keydown", inputController.handleKeyDown);
     state.root.removeEventListener("pointerdown", canvasController.handlePointerDown);
     state.root.removeEventListener("pointermove", canvasController.handlePointerMove);
+    state.root.removeEventListener("pointercancel", canvasController.handlePointerCancel);
     state.root.removeEventListener("contextmenu", canvasController.handleContextMenu);
     state.root.removeEventListener("wheel", canvasController.handleWheel);
     state.root.ownerDocument.removeEventListener("keydown", inputController.handleDocumentKeyDown);
@@ -1051,12 +1190,15 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       state.inlineParamFocusFrameId = null;
     }
     window.removeEventListener("pointerup", canvasController.handlePointerUp);
+    window.removeEventListener("pointercancel", canvasController.handlePointerCancel);
     window.removeEventListener("resize", updateViewportSize);
     state.root.innerHTML = "";
     state.root = null;
     state.viewport = null;
     state.viewportCanvas = null;
     state.inlineParamLayer = null;
+    state.touchPointers.clear();
+    state.touchGesture = { kind: "none" };
   }
 
   return {

@@ -103,6 +103,97 @@ test("editor can create nodes, connect, move, rotate, and delete", async () => {
   }
 });
 
+test("reopening the add-node menu places new nodes in the nearest free slot", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness();
+    await harness.flush();
+
+    await createNodeFromMenu(harness, "pulse");
+    await createNodeFromMenu(harness, "out");
+
+    const firstNode = harness.query("node-node-1");
+    const secondNode = harness.query("node-node-2");
+    const firstBox = getNodeScreenBox(firstNode);
+    const secondBox = getNodeScreenBox(secondNode);
+
+    assert.notDeepEqual(
+      harness.snapshot.nodes.find((node) => node.id === "node-1")?.pos,
+      harness.snapshot.nodes.find((node) => node.id === "node-2")?.pos,
+    );
+    assert.equal(
+      firstBox.x + firstBox.width <= secondBox.x ||
+        secondBox.x + secondBox.width <= firstBox.x ||
+        firstBox.y + firstBox.height <= secondBox.y ||
+        secondBox.y + secondBox.height <= firstBox.y,
+      true,
+    );
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("mobile toolbar delete button removes the selected edge or node", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 6, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-a",
+            from: { nodeId: "node-a", portSlot: 0 },
+            to: { nodeId: "node-b", portSlot: 0 },
+            manualCorners: [],
+          },
+        ],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    assert.equal(harness.query("delete-toolbar-button").hasAttribute("disabled"), true);
+
+    const edgeHit = harness.query("edge-edge-a").querySelector(".ping-editor__edge-hit");
+    harness.pointerDown(edgeHit, { clientX: 100, clientY: 80 });
+    await harness.flush();
+
+    assert.deepEqual(harness.selection, { kind: "edge", edgeId: "edge-a" });
+    assert.equal(harness.query("delete-toolbar-button").hasAttribute("disabled"), false);
+
+    harness.click(harness.query("delete-toolbar-button"));
+    await harness.flush();
+
+    assert.equal(harness.snapshot.edges.length, 0);
+    assert.deepEqual(harness.selection, { kind: "none" });
+    assert.equal(harness.query("delete-toolbar-button").hasAttribute("disabled"), true);
+
+    harness.click(harness.query("node-node-a"));
+    await harness.flush();
+
+    assert.deepEqual(harness.selection, { kind: "node", nodeId: "node-a" });
+    assert.equal(harness.query("delete-toolbar-button").hasAttribute("disabled"), false);
+
+    harness.click(harness.query("delete-toolbar-button"));
+    await harness.flush();
+
+    assert.equal(harness.snapshot.nodes.some((node) => node.id === "node-a"), false);
+    assert.deepEqual(harness.selection, { kind: "none" });
+    assert.ok(harness.outputs.some((output) => output.type === "ui/undoSnapshot"));
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("editor keeps dragged nodes visible at their transient position", async () => {
   const dom = setupDom();
 
@@ -732,4 +823,3 @@ test("copy shortcuts are ignored while typing in inline param fields", async () 
     dom.cleanup();
   }
 });
-

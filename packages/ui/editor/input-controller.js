@@ -25,6 +25,7 @@ export function createInputController({
   handleCreateNode,
   handleRotateSelection,
   handleDeleteSelection,
+  handleCancelEdgeCreate,
   handleRenameNode,
   handleSetParam,
   handleGroupOpen,
@@ -202,6 +203,14 @@ export function createInputController({
 
       event.preventDefault();
       handleApplyInspectDsl();
+      return;
+    }
+
+    if (event.key === "Escape" && state.tempoPopoverOpen && event.target?.closest?.("[data-tempo-popover]")) {
+      event.preventDefault();
+      state.tempoPopoverOpen = false;
+      markDirty();
+      focusViewport();
       return;
     }
 
@@ -392,6 +401,15 @@ export function createInputController({
       return false;
     }
 
+    function closeTempoPopover() {
+      if (!state.tempoPopoverOpen) {
+        return false;
+      }
+
+      state.tempoPopoverOpen = false;
+      return true;
+    }
+
     if (action === "create-node") {
       handleCreateNode(target.getAttribute("data-palette-type"));
       return true;
@@ -424,12 +442,16 @@ export function createInputController({
     }
 
     if (action === "toggle-sidebar") {
+      closeTempoPopover();
+      state.sidebarAutoMode = false;
       state.sidebarCollapsed = !state.sidebarCollapsed;
       markDirty();
       return true;
     }
 
     if (action === "open-docs-sidebar") {
+      closeTempoPopover();
+      state.sidebarAutoMode = false;
       state.sidebarCollapsed = false;
       state.activeTab = "docs";
       markDirty();
@@ -457,6 +479,7 @@ export function createInputController({
     }
 
     if (action === "open-menu") {
+      closeTempoPopover();
       if (state.menu.open) {
         closeMenu();
       } else {
@@ -475,9 +498,21 @@ export function createInputController({
       return true;
     }
 
+    if (action === "cancel-edge-create") {
+      handleCancelEdgeCreate();
+      return true;
+    }
+
     if (action === "reset-pulses") {
+      closeTempoPopover();
       state.runtime?.resetPulses?.();
       emitOutput({ type: "runtime/resetPulses" });
+      return true;
+    }
+
+    if (action === "toggle-tempo-popover") {
+      state.tempoPopoverOpen = !state.tempoPopoverOpen;
+      markDirty();
       return true;
     }
 
@@ -709,6 +744,14 @@ export function createInputController({
   }
 
   function handleRootClick(event, handleViewportClick) {
+    if (
+      state.tempoPopoverOpen &&
+      !event.target?.closest?.("[data-tempo-popover], [data-action='toggle-tempo-popover']")
+    ) {
+      state.tempoPopoverOpen = false;
+      markDirty();
+    }
+
     if (handleActionClick(event.target.closest("[data-action]"))) {
       return;
     }
