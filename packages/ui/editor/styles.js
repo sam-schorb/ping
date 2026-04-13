@@ -1116,18 +1116,19 @@ export function createStyles(config) {
         }
         .ping-editor__sidebar {
           position: absolute;
-          top: calc(${collapsedSidebarWidthPx}px + 8px);
-          left: 10px;
-          right: 10px;
+          top: ${collapsedSidebarWidthPx}px;
+          left: 0;
+          right: 0;
           bottom: auto;
-          width: auto;
+          width: 100%;
           min-width: 0;
           max-width: none;
-          max-height: min(calc(100% - ${collapsedSidebarWidthPx}px - 18px), 560px);
-          border: 1px solid var(--ping-chrome-border-strong);
-          border-radius: 18px;
+          max-height: calc(100% - ${collapsedSidebarWidthPx}px);
+          border-left: 0;
+          border-right: 0;
+          border-bottom: 1px solid var(--ping-chrome-border-strong);
           box-shadow: 0 14px 34px var(--ping-chrome-shadow);
-          overflow: hidden;
+          overflow: visible;
         }
         .ping-editor__sidebar.is-collapsed {
           display: none;
