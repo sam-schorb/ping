@@ -329,7 +329,7 @@ export function createStyles(config) {
       }
       .ping-editor__sidebar {
         position: absolute;
-        top: 0;
+        top: ${collapsedSidebarWidthPx}px;
         right: 0;
         bottom: 0;
         z-index: 3;
@@ -340,7 +340,6 @@ export function createStyles(config) {
         background: var(--ping-chrome-shell);
         box-shadow: -10px 0 30px var(--ping-chrome-shadow);
         color: var(--ping-chrome-ink);
-        height: 100%;
         min-height: 0;
         overflow: visible;
       }

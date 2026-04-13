@@ -837,6 +837,10 @@ test("editor sidebar collapses into a toggle bar and restores the active tab", a
     const styles = harness.container.querySelector("[data-ping-editor-style]").textContent;
     assert.match(
       styles,
+      /\.ping-editor__sidebar\s*\{[^}]*top:\s*52px;[^}]*right:\s*0;[^}]*bottom:\s*0;[^}]*overflow:\s*visible;[^}]*\}/,
+    );
+    assert.match(
+      styles,
       /\.ping-editor__sidebar-toggle\s*\{[\s\S]*top:\s*12px;[\s\S]*inset-inline-start:\s*0;[\s\S]*transform:\s*translateX\(-100%\);/,
     );
     assert.match(

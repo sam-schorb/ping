@@ -360,7 +360,7 @@ test("groups sidebar hides remove for in-use groups and opens the dialog clear o
   }
 });
 
-test("editor sidebar spans the full editor height and scrolls internally", async () => {
+test("editor sidebar starts below the toolbar and scrolls internally", async () => {
   const dom = setupDom();
 
   try {
@@ -372,9 +372,11 @@ test("editor sidebar spans the full editor height and scrolls internally", async
 
     const styles = harness.container.querySelector("[data-ping-editor-style]").textContent;
     assert.match(styles, /\.ping-editor\s*\{[\s\S]*position:\s*relative;[\s\S]*grid-template-rows:\s*minmax\(0,\s*1fr\);/);
-    assert.match(styles, /\.ping-editor__sidebar\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*0;[\s\S]*right:\s*0;[\s\S]*bottom:\s*0;/);
+    assert.match(
+      styles,
+      /\.ping-editor__sidebar\s*\{[^}]*position:\s*absolute;[^}]*top:\s*52px;[^}]*right:\s*0;[^}]*bottom:\s*0;[^}]*\}/,
+    );
     assert.match(styles, /\.ping-editor__sidebar-content\s*\{[\s\S]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/);
-    assert.match(styles, /\.ping-editor__sidebar\s*\{[\s\S]*height:\s*100%;/);
     assert.match(styles, /\.ping-editor__sidebar\s*\{[\s\S]*overflow:\s*visible;/);
     assert.match(styles, /\.ping-editor__sidebar-content\s*\{[\s\S]*overflow:\s*hidden;/);
     assert.match(styles, /\.ping-editor__panel-scroll\s*\{[\s\S]*overflow:\s*auto;/);
