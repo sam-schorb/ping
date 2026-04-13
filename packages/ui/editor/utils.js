@@ -5,8 +5,8 @@ export const CLIPBOARD_TEXT_MARKER = "Ping subgraph";
 export const NODE_PULSE_DURATION_MS = 200;
 export const EDGE_CREATE_PREVIEW_EDGE_ID = "__edge-create-preview__";
 export const BUILT_IN_SIDEBAR_TABS = Object.freeze([
-  { id: "console", label: "console" },
   { id: "docs", label: "docs" },
+  { id: "console", label: "console" },
   { id: "groups", label: "groups" },
   { id: "samples", label: "samples" },
 ]);

@@ -429,6 +429,13 @@ export function createInputController({
       return true;
     }
 
+    if (action === "open-docs-sidebar") {
+      state.sidebarCollapsed = false;
+      state.activeTab = "docs";
+      markDirty();
+      return true;
+    }
+
     if (action === "open-sample-picker") {
       getSampleInputBySlotId(target.getAttribute("data-slot-id"))?.click();
       return true;

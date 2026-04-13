@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { RiArrowDownSLine, RiArrowLeftSLine, RiArrowRightSLine, RiArrowUpSLine } from "react-icons/ri";
+import { RiArrowLeftSLine, RiArrowRightSLine, RiArrowUpSLine } from "react-icons/ri";
 
 import { escapeHtml } from "./utils.js";
 
@@ -39,7 +39,7 @@ export function renderSidebarToggleIconContent(collapsed) {
       ${renderToolbarIconMarkup(collapsed ? RiArrowLeftSLine : RiArrowRightSLine)}
     </span>
     <span class="ping-editor__sidebar-toggle-icon ping-editor__sidebar-toggle-icon--mobile" aria-hidden="true">
-      ${renderToolbarIconMarkup(collapsed ? RiArrowUpSLine : RiArrowDownSLine)}
+      ${renderToolbarIconMarkup(RiArrowUpSLine)}
     </span>
   `;
 }
@@ -191,6 +191,9 @@ export function createStyles(config) {
       }
       .ping-editor__toolbar-button-label {
         display: inline;
+      }
+      .ping-editor__toolbar-docs-button {
+        display: none;
       }
       .ping-editor__field.ping-editor__toolbar-field {
         display: inline-flex;
@@ -1100,6 +1103,9 @@ export function createStyles(config) {
         .ping-editor__toolbar {
           padding-inline-end: 10px;
         }
+        .ping-editor__toolbar-docs-button {
+          display: inline-flex;
+        }
         .ping-editor__viewport-shell {
           min-height: clamp(480px, 72vw, 640px);
         }
@@ -1109,24 +1115,22 @@ export function createStyles(config) {
           min-height: clamp(480px, 72vw, 640px);
         }
         .ping-editor__sidebar {
-          position: relative;
-          top: auto;
-          right: auto;
+          position: absolute;
+          top: calc(${collapsedSidebarWidthPx}px + 8px);
+          left: 10px;
+          right: 10px;
           bottom: auto;
-          width: 100%;
+          width: auto;
           min-width: 0;
           max-width: none;
-          height: auto;
-          border-left: 0;
-          border-top: 1px solid var(--ping-chrome-border-strong);
-          box-shadow: 0 -6px 20px var(--ping-chrome-shadow);
+          max-height: min(calc(100% - ${collapsedSidebarWidthPx}px - 18px), 560px);
+          border: 1px solid var(--ping-chrome-border-strong);
+          border-radius: 18px;
+          box-shadow: 0 14px 34px var(--ping-chrome-shadow);
+          overflow: hidden;
         }
         .ping-editor__sidebar.is-collapsed {
-          min-width: 0;
-          width: 100%;
-          max-width: none;
-          min-height: ${collapsedSidebarWidthPx}px;
-          height: ${collapsedSidebarWidthPx}px;
+          display: none;
         }
         .ping-editor__sidebar-toggle,
         .ping-editor__sidebar.is-collapsed .ping-editor__sidebar-toggle {
@@ -1173,6 +1177,9 @@ export function createStyles(config) {
         .ping-editor__toolbar-button-label,
         .ping-editor__toolbar-label {
           display: none;
+        }
+        .ping-editor__toolbar-docs-button .ping-editor__toolbar-button-label {
+          display: inline;
         }
         .ping-editor__toolbar-slider {
           width: clamp(72px, 24vw, 96px);

@@ -1,5 +1,6 @@
 import { FaArrowLeftLong, FaArrowRightLong, FaObjectGroup } from "react-icons/fa6";
 import { GrPowerReset } from "react-icons/gr";
+import { IoIosHelpCircle } from "react-icons/io";
 import { IoMdAdd } from "react-icons/io";
 
 import {
@@ -148,6 +149,16 @@ export function createRenderController({
               </button>
             </div>
             <div class="ping-editor__toolbar-group">
+              <button
+                class="ping-editor__panel-button ping-editor__toolbar-docs-button"
+                type="button"
+                data-action="open-docs-sidebar"
+                data-testid="docs-toolbar-button"
+                aria-label="Docs"
+                title="Docs"
+              >
+                ${renderToolbarButtonContent("Docs", IoIosHelpCircle)}
+              </button>
               <button
                 class="ping-editor__panel-button is-primary"
                 type="button"

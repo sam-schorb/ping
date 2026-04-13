@@ -502,7 +502,7 @@ test("editor orders the built-in sidebar tabs and uses compact history controls"
     const tabIds = [...harness.container.querySelectorAll(".ping-editor__tabs [data-tab]")]
       .map((tab) => tab.getAttribute("data-tab"));
 
-    assert.deepEqual(tabIds.slice(0, 4), ["console", "docs", "groups", "samples"]);
+    assert.deepEqual(tabIds.slice(0, 4), ["docs", "console", "groups", "samples"]);
     assert.equal(harness.query("undo-button").getAttribute("aria-label"), "Undo");
     assert.equal(harness.query("redo-button").getAttribute("aria-label"), "Redo");
     assert.ok(harness.query("undo-button").querySelector(".ping-editor__toolbar-button-icon svg"));
@@ -516,6 +516,9 @@ test("editor orders the built-in sidebar tabs and uses compact history controls"
       "Create Group",
     );
     assert.ok(createGroupButton?.querySelector(".ping-editor__toolbar-button-icon svg"));
+    const docsToolbarButton = harness.query("docs-toolbar-button");
+    assert.equal(docsToolbarButton.querySelector(".ping-editor__toolbar-button-label")?.textContent.trim(), "Docs");
+    assert.ok(docsToolbarButton.querySelector(".ping-editor__toolbar-button-icon svg"));
     assert.equal(harness.query("reset-pulses").textContent.trim(), "Reset");
     assert.ok(harness.query("reset-pulses").querySelector(".ping-editor__toolbar-button-icon svg"));
     assert.equal(
@@ -714,7 +717,7 @@ test("editor sidebar collapses into a toggle bar and restores the active tab", a
     );
     assert.equal(harness.container.querySelector('[data-tab="groups"]'), null);
 
-    harness.click(harness.query("sidebar-toggle"));
+    harness.click(harness.query("docs-toolbar-button"));
     await harness.flush();
     assert.equal(harness.query("editor-sidebar").classList.contains("is-collapsed"), false);
     assert.equal(harness.query("sidebar-toggle").getAttribute("aria-label"), "Close sidebar");
@@ -723,7 +726,7 @@ test("editor sidebar collapses into a toggle bar and restores the active tab", a
       /--ping-toolbar-sidebar-clearance:\s*calc\(min\(320px,\s*48vw,\s*560px\)\s*\+\s*32px\)/,
     );
     assert.equal(
-      harness.container.querySelector('[data-tab="groups"]').classList.contains("is-active"),
+      harness.container.querySelector('[data-tab="docs"]').classList.contains("is-active"),
       true,
     );
 
@@ -976,4 +979,3 @@ test("group dialog styles keep the primary action visible and spaced from the ma
     dom.cleanup();
   }
 });
-
