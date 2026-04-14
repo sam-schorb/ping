@@ -305,6 +305,75 @@ test("count wraps at its configured max and reapplies the new count to the incom
   assert.equal(result.state.count, 1);
 });
 
+test("step advances by the current stride around the 1..8 ring and preserves pulse metadata", () => {
+  const node = getNodeDefinition("step");
+  let state = node.initState();
+
+  let result = node.onSignal(
+    createBehaviorContext({
+      param: 3,
+      state,
+      pulse: {
+        value: 8,
+        speed: 6,
+        params: {
+          crush: 2,
+        },
+      },
+    }),
+  );
+  assert.deepEqual(result.outputs, [
+    {
+      value: 3,
+      speed: 6,
+      params: {
+        crush: 2,
+      },
+    },
+  ]);
+  assert.equal(result.state.value, 3);
+  state = result.state;
+
+  result = node.onSignal(
+    createBehaviorContext({
+      param: 3,
+      state,
+      pulse: {
+        value: 5,
+        speed: 4,
+        params: {
+          decay: 5,
+        },
+      },
+    }),
+  );
+  assert.deepEqual(result.outputs, [
+    {
+      value: 6,
+      speed: 4,
+      params: {
+        decay: 5,
+      },
+    },
+  ]);
+  assert.equal(result.state.value, 6);
+
+  const controlResult = node.onControl(
+    createBehaviorContext({
+      pulse: { value: 5 },
+    }),
+  );
+  result = node.onSignal(
+    createBehaviorContext({
+      param: controlResult.param,
+      state: { value: 6 },
+    }),
+  );
+  assert.equal(controlResult.param, 5);
+  assert.deepEqual(result.outputs, [{ value: 3, speed: 2, params: { decay: 3 } }]);
+  assert.equal(result.state.value, 3);
+});
+
 test("block stores the most recent control parity and gates the next signal accordingly", () => {
   const node = getNodeDefinition("block");
   const closedState = node.onControl(

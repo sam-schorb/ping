@@ -169,6 +169,12 @@ export function createCountState() {
   };
 }
 
+export function createStepState() {
+  return {
+    value: 0,
+  };
+}
+
 function normalizeCountCount(rawCount, maxValue) {
   let count = Number.isFinite(rawCount) ? Math.trunc(rawCount) : 0;
 
@@ -196,6 +202,36 @@ export function countSignal(ctx) {
       }),
     ],
     state: replaceState(ctx.state, { count: nextCount }),
+  };
+}
+
+function normalizeStepValue(rawValue) {
+  let value = Number.isFinite(rawValue) ? Math.trunc(rawValue) : 0;
+
+  if (value < 0) {
+    value = 0;
+  }
+
+  if (value > 8) {
+    value %= 8;
+  }
+
+  return value;
+}
+
+export function stepSignal(ctx) {
+  const stride = clampDiscreteNodeValue(ctx.param, 1);
+  const currentValue = normalizeStepValue(ctx.state?.value);
+  const nextValue = ((currentValue + stride - 1) % 8) + 1;
+
+  return {
+    outputs: [
+      createOutput(nextValue, {
+        speed: ctx.pulse.speed,
+        params: ctx.pulse.params,
+      }),
+    ],
+    state: replaceState(ctx.state, { value: nextValue }),
   };
 }
 

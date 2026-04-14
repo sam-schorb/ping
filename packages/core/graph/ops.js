@@ -29,6 +29,44 @@ function getEdgeIndex(snapshot, id) {
   return snapshot.edges.findIndex((edge) => edge.id === id);
 }
 
+function cloneCornerPoint(point) {
+  return {
+    x: point.x,
+    y: point.y,
+  };
+}
+
+function normalizeConsecutiveDuplicateCorners(manualCorners = []) {
+  const normalized = [];
+
+  for (const point of manualCorners) {
+    const clonedPoint = cloneCornerPoint(point);
+    const previousPoint = normalized[normalized.length - 1];
+
+    if (
+      previousPoint &&
+      previousPoint.x === clonedPoint.x &&
+      previousPoint.y === clonedPoint.y
+    ) {
+      continue;
+    }
+
+    normalized.push(clonedPoint);
+  }
+
+  return normalized;
+}
+
+function manualCornersEqual(left = [], right = []) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every(
+    (point, index) => point.x === right[index]?.x && point.y === right[index]?.y,
+  );
+}
+
 function createInvalidOperation(opIndex, opType, message, entityId) {
   return createGraphOpError(
     createModelIssue(MODEL_ERROR_CODES.INVALID_OPERATION, message, entityId),
@@ -637,9 +675,15 @@ export function applyGraphOp(
 
         const nextCorners = [...edge.manualCorners];
         nextCorners.splice(payload.index, 0, normalized.snapshot.edges[0].manualCorners[0]);
+        const normalizedCorners = normalizeConsecutiveDuplicateCorners(nextCorners);
+
+        if (manualCornersEqual(edge.manualCorners, normalizedCorners)) {
+          return { changed: false };
+        }
+
         snapshot.edges[edgeIndex] = {
           ...edge,
-          manualCorners: nextCorners,
+          manualCorners: normalizedCorners,
         };
 
         return { changed: true };
@@ -659,9 +703,15 @@ export function applyGraphOp(
       if (opType === "removeCorner") {
         const nextCorners = [...edge.manualCorners];
         nextCorners.splice(payload.index, 1);
+        const normalizedCorners = normalizeConsecutiveDuplicateCorners(nextCorners);
+
+        if (manualCornersEqual(edge.manualCorners, normalizedCorners)) {
+          return { changed: false };
+        }
+
         snapshot.edges[edgeIndex] = {
           ...edge,
-          manualCorners: nextCorners,
+          manualCorners: normalizedCorners,
         };
 
         return { changed: true };
@@ -701,19 +751,18 @@ export function applyGraphOp(
       }
 
       const point = normalized.snapshot.edges[0].manualCorners[0];
-      const existingPoint = edge.manualCorners[payload.index];
+      const nextCorners = edge.manualCorners.map((corner, index) =>
+        index === payload.index ? point : cloneCornerPoint(corner),
+      );
+      const normalizedCorners = normalizeConsecutiveDuplicateCorners(nextCorners);
 
-      if (existingPoint.x === point.x && existingPoint.y === point.y) {
+      if (manualCornersEqual(edge.manualCorners, normalizedCorners)) {
         return { changed: false };
       }
 
-      const nextCorners = edge.manualCorners.map((corner, index) =>
-        index === payload.index ? point : { ...corner },
-      );
-
       snapshot.edges[edgeIndex] = {
         ...edge,
-        manualCorners: nextCorners,
+        manualCorners: normalizedCorners,
       };
 
       return { changed: true };

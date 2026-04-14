@@ -147,19 +147,51 @@ function selectFrontierIndex(frontier) {
   return bestIndex;
 }
 
-function simplifyOrthogonalPoints(points) {
-  if (!Array.isArray(points) || points.length < 3) {
-    return points ?? [];
+function createPathEntry(point, { locked = false } = {}) {
+  return {
+    point,
+    locked,
+  };
+}
+
+function appendPathEntry(entries, point, { locked = false } = {}) {
+  if (!Array.isArray(entries)) {
+    return;
   }
 
-  const simplified = [points[0]];
+  const lastEntry = entries.at(-1);
 
-  for (let index = 1; index < points.length - 1; index += 1) {
+  if (lastEntry && samePoint(lastEntry.point, point)) {
+    lastEntry.locked = lastEntry.locked || locked;
+    return;
+  }
+
+  entries.push(createPathEntry(point, { locked }));
+}
+
+function simplifyOrthogonalEntries(entries) {
+  if (!Array.isArray(entries) || entries.length < 3) {
+    return entries ?? [];
+  }
+
+  const simplified = [entries[0]];
+
+  for (let index = 1; index < entries.length - 1; index += 1) {
     const previous = simplified[simplified.length - 1];
-    const current = points[index];
-    const next = points[index + 1];
-    const sameHorizontal = previous.y === current.y && current.y === next.y;
-    const sameVertical = previous.x === current.x && current.x === next.x;
+    const current = entries[index];
+    const next = entries[index + 1];
+
+    if (current.locked) {
+      simplified.push(current);
+      continue;
+    }
+
+    const sameHorizontal =
+      previous.point.y === current.point.y &&
+      current.point.y === next.point.y;
+    const sameVertical =
+      previous.point.x === current.point.x &&
+      current.point.x === next.point.x;
 
     if (sameHorizontal || sameVertical) {
       continue;
@@ -168,25 +200,87 @@ function simplifyOrthogonalPoints(points) {
     simplified.push(current);
   }
 
-  simplified.push(points.at(-1));
+  simplified.push(entries.at(-1));
   return simplified;
 }
 
-function normalizeRoutePoints(points) {
+function normalizeRouteEntries(entries) {
   const normalized = [];
 
-  for (const point of points) {
-    if (
-      normalized.length > 0 &&
-      samePoint(normalized[normalized.length - 1], point)
-    ) {
-      continue;
-    }
-
-    normalized.push(point);
+  for (const entry of entries) {
+    appendPathEntry(normalized, entry.point, { locked: entry.locked });
   }
 
-  return simplifyOrthogonalPoints(normalized);
+  return simplifyOrthogonalEntries(normalized);
+}
+
+function normalizeRoutePoints(entries) {
+  return normalizeRouteEntries(entries).map((entry) => entry.point);
+}
+
+function isPointOnOrthogonalSegment(point, start, end) {
+  if (start.x === end.x) {
+    return (
+      point.x === start.x &&
+      point.y >= Math.min(start.y, end.y) &&
+      point.y <= Math.max(start.y, end.y)
+    );
+  }
+
+  if (start.y === end.y) {
+    return (
+      point.y === start.y &&
+      point.x >= Math.min(start.x, end.x) &&
+      point.x <= Math.max(start.x, end.x)
+    );
+  }
+
+  return false;
+}
+
+function getOrthogonalSegmentLength(start, end) {
+  return Math.abs(end.x - start.x) + Math.abs(end.y - start.y);
+}
+
+function getDistanceFromSegmentStart(start, point) {
+  return Math.abs(point.x - start.x) + Math.abs(point.y - start.y);
+}
+
+export function getOrthogonalRouteDistanceAtPoint(
+  points,
+  point,
+  { minimumDistance = -Infinity } = {},
+) {
+  if (
+    !Array.isArray(points) ||
+    points.length < 2 ||
+    !Number.isFinite(point?.x) ||
+    !Number.isFinite(point?.y)
+  ) {
+    return null;
+  }
+
+  let traversed = 0;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1];
+    const end = points[index];
+
+    if (isPointOnOrthogonalSegment(point, start, end)) {
+      const distance = traversed + getDistanceFromSegmentStart(start, point);
+
+      if (distance >= minimumDistance) {
+        return {
+          distance,
+          segmentIndex: index - 1,
+        };
+      }
+    }
+
+    traversed += getOrthogonalSegmentLength(start, end);
+  }
+
+  return null;
 }
 
 function createRoutingBounds(obstacles, points, margin) {
@@ -510,7 +604,7 @@ export function buildOrthogonalRoute({
   const allPoints = [startAnchor, startStub, endStub, endAnchor, ...manualCorners];
   const bounds = createRoutingBounds(obstacles, allPoints, stubLength + 2);
   const grid = createObstacleGrid(obstacles);
-  const path = [startAnchor];
+  const path = [createPathEntry(startAnchor)];
 
   if (!validateFixedSegment(startAnchor, startStub, grid, [startAnchor])) {
     return null;
@@ -521,13 +615,15 @@ export function buildOrthogonalRoute({
   }
 
   if (!samePoint(startStub, startAnchor)) {
-    path.push(startStub);
+    appendPathEntry(path, startStub);
   }
 
   let current = startStub;
   let currentDirectionKey = startLength > 0 ? getDirectionKey(startOutward) : null;
 
-  for (const target of segmentTargets) {
+  for (let targetIndex = 0; targetIndex < segmentTargets.length; targetIndex += 1) {
+    const target = segmentTargets[targetIndex];
+    const targetIsManualCorner = targetIndex < manualCorners.length;
     const segment = findOrthogonalSegmentPath({
       start: current,
       end: target,
@@ -541,7 +637,12 @@ export function buildOrthogonalRoute({
       return null;
     }
 
-    path.push(...segment.slice(1));
+    for (let segmentIndex = 1; segmentIndex < segment.length; segmentIndex += 1) {
+      const point = segment[segmentIndex];
+      appendPathEntry(path, point, {
+        locked: targetIsManualCorner && segmentIndex === segment.length - 1,
+      });
+    }
 
     if (segment.length >= 2) {
       currentDirectionKey = getDirectionKey({
@@ -554,7 +655,7 @@ export function buildOrthogonalRoute({
   }
 
   if (!samePoint(endStub, endAnchor)) {
-    path.push(endAnchor);
+    appendPathEntry(path, endAnchor);
   }
 
   return normalizeRoutePoints(path);

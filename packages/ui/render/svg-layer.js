@@ -1,4 +1,4 @@
-import { isGroupBackedNodeType, routeEdge } from "@ping/core";
+import { isGroupBackedNodeType, resolveManualCornerDrag, routeEdge } from "@ping/core";
 
 import { resolveIcon } from "../icons/library.js";
 import { resolveNodeTheme } from "../theme/node-theme.js";
@@ -245,6 +245,7 @@ function createZoomMetrics(camera, config) {
       min: 4,
       max: 8,
     }),
+    cornerHitRadiusPx: Math.max(config.port.hoverRadiusPx + 2, config.port.radiusPx + 6),
     nodeStrokePx,
     nodeSelectionStrokePx: nodeStrokePx * 3,
     nodeCornerRadiusPx: scaleVisual(config.node.cornerRadiusPx, scale, {
@@ -277,6 +278,11 @@ function createZoomMetrics(camera, config) {
       power: 0.42,
       min: 3,
       max: 7,
+    }),
+    thumbStrokeWidthPx: scaleVisual(config.thumb.strokeWidthPx, scale, {
+      power: 0.22,
+      min: 0.9,
+      max: 1.8,
     }),
     selectionStrokePx: scaleVisual(config.selection.strokeWidthPx, scale, {
       power: 0.24,
@@ -410,17 +416,91 @@ function getNodeIconLayout(screenBox, config, zoomMetrics, labelVisible) {
   };
 }
 
-function createPreviewSnapshot(snapshot, previewState) {
-  if (
-    previewState?.drag?.kind !== "node" &&
-    !(previewState?.nodePositionOverrides?.size > 0)
-  ) {
+function samePoint(a, b) {
+  return a?.x === b?.x && a?.y === b?.y;
+}
+
+function getPreviewCornerDrag(snapshot, previewState, registry, config) {
+  if (previewState?.drag?.kind !== "corner") {
+    return null;
+  }
+
+  const edgeId = previewState.drag.edgeId;
+  const cornerIndex = previewState.drag.cornerIndex;
+  const point = previewState.drag.currentPoint ?? previewState.drag.startPoint;
+
+  if (typeof edgeId !== "string" || !Number.isInteger(cornerIndex) || !point) {
+    return null;
+  }
+
+  const edge = snapshot.edges.find((entry) => entry.id === edgeId);
+
+  if (!edge?.manualCorners?.[cornerIndex]) {
+    return null;
+  }
+
+  const desiredPoint = snapWorldPoint(point, config);
+  const cachedResolution =
+    samePoint(previewState.drag.desiredPoint, desiredPoint) &&
+    previewState.drag.resolvedPoint &&
+    previewState.drag.resolvedRoute
+      ? {
+          status: previewState.drag.resolveStatus ?? "exact",
+          resolvedPoint: previewState.drag.resolvedPoint,
+          route: previewState.drag.resolvedRoute,
+        }
+      : null;
+  let resolution = cachedResolution;
+
+  if (!resolution && registry) {
+    try {
+      resolution = resolveManualCornerDrag({
+        snapshot,
+        registry,
+        edgeId,
+        cornerIndex,
+        desiredPoint,
+      });
+    } catch {
+      resolution = null;
+    }
+  }
+
+  return {
+    edgeId,
+    cornerIndex,
+    desiredPoint,
+    point: resolution?.resolvedPoint ?? desiredPoint,
+    route: resolution?.route ?? null,
+    status: resolution?.status ?? "exact",
+  };
+}
+
+function createPreviewSnapshot(snapshot, previewState, previewCornerDrag) {
+  const hasPreviewNodeOverrides =
+    previewState?.drag?.kind === "node" || previewState?.nodePositionOverrides?.size > 0;
+
+  if (!hasPreviewNodeOverrides && !previewCornerDrag) {
     return snapshot;
   }
 
   return {
     ...snapshot,
     nodes: snapshot.nodes.map((node) => getRenderableNode(node, previewState)),
+    edges: previewCornerDrag
+      ? snapshot.edges.map((edge) =>
+          edge.id !== previewCornerDrag.edgeId
+            ? edge
+            : {
+                ...edge,
+                manualCorners: (edge.manualCorners ?? []).map((corner, cornerIndex) =>
+                  cornerIndex === previewCornerDrag.cornerIndex
+                    ? previewCornerDrag.point
+                    : corner,
+                ),
+              },
+        )
+      : snapshot.edges,
   };
 }
 
@@ -495,7 +575,18 @@ function createPreviewBoundsByNodeId(snapshot, previewSnapshot, registry, previe
   return previewBoundsByNodeId;
 }
 
-function edgeNeedsPreviewRoute(edge, committedRoute, previewNodeIds, previewBoundsByNodeId, routeErrors) {
+function edgeNeedsPreviewRoute(
+  edge,
+  committedRoute,
+  previewNodeIds,
+  previewBoundsByNodeId,
+  routeErrors,
+  previewEdgeIds,
+) {
+  if (previewEdgeIds.has(edge.id)) {
+    return true;
+  }
+
   if (previewNodeIds.has(edge.from.nodeId) || previewNodeIds.has(edge.to.nodeId)) {
     return true;
   }
@@ -522,8 +613,10 @@ function edgeNeedsPreviewRoute(edge, committedRoute, previewNodeIds, previewBoun
 
 export function createPreviewEdgeRoutes(snapshot, previewSnapshot, routes, registry, previewState, config) {
   const previewNodeIds = collectPreviewNodeIds(previewState);
+  const previewCornerDrag = getPreviewCornerDrag(snapshot, previewState, registry, config);
+  const previewEdgeIds = previewCornerDrag ? new Set([previewCornerDrag.edgeId]) : new Set();
 
-  if (previewNodeIds.size === 0) {
+  if (previewNodeIds.size === 0 && previewEdgeIds.size === 0) {
     return new Map();
   }
 
@@ -552,6 +645,11 @@ export function createPreviewEdgeRoutes(snapshot, previewSnapshot, routes, regis
   const previewEdgeRoutes = new Map();
 
   for (const edge of snapshot.edges) {
+    if (previewCornerDrag?.edgeId === edge.id && previewCornerDrag.route) {
+      previewEdgeRoutes.set(edge.id, previewCornerDrag.route);
+      continue;
+    }
+
     const committedRoute = getEdgeRoute(snapshot, edge, routes, registry);
 
     if (
@@ -561,6 +659,7 @@ export function createPreviewEdgeRoutes(snapshot, previewSnapshot, routes, regis
         previewNodeIds,
         previewBoundsByNodeId,
         routeErrors,
+        previewEdgeIds,
       )
     ) {
       continue;
@@ -577,7 +676,8 @@ export function createPreviewEdgeRoutes(snapshot, previewSnapshot, routes, regis
 }
 
 export function createPreviewRenderState(snapshot, routes, registry, previewState, config) {
-  const previewSnapshot = createPreviewSnapshot(snapshot, previewState);
+  const previewCornerDrag = getPreviewCornerDrag(snapshot, previewState, registry, config);
+  const previewSnapshot = createPreviewSnapshot(snapshot, previewState, previewCornerDrag);
   const previewNodeIds = collectPreviewNodeIds(previewState);
   const previewEdgeRoutes = createPreviewEdgeRoutes(
     snapshot,
@@ -602,7 +702,6 @@ export function createPreviewRenderState(snapshot, routes, registry, previewStat
 }
 
 function renderEdge(edge, route, routes, camera, config, hover, selection, zoomMetrics) {
-  const selectionHighlightColor = config.selection.highlightColor ?? config.selection.color;
   const screenPoints = route.points.map((point) => worldToScreen(point, camera, config));
   const path = screenPoints.length
     ? `M ${screenPoints[0].x} ${screenPoints[0].y}${screenPoints
@@ -612,6 +711,8 @@ function renderEdge(edge, route, routes, camera, config, hover, selection, zoomM
     : "";
   const isSelected = selection.kind === "edge" && selection.edgeId === edge.id;
   const isHovered = hover.kind === "edge" && hover.edgeId === edge.id;
+  const hoveredCornerIndex =
+    hover.kind === "corner" && hover.edgeId === edge.id ? hover.cornerIndex : null;
   const missing = !routes?.edgeRoutes?.has(edge.id);
 
   return `
@@ -651,16 +752,25 @@ function renderEdge(edge, route, routes, camera, config, hover, selection, zoomM
             selection.kind === "corner" &&
             selection.edgeId === edge.id &&
             selection.cornerIndex === cornerIndex;
+          const hoveredCorner = hoveredCornerIndex === cornerIndex;
+          const showVisibleHandle = isSelected || isHovered || selectedCorner || hoveredCorner;
           return `
             <circle
-              class="ping-editor__corner ${selectedCorner ? "is-selected" : ""}"
+              class="ping-editor__corner-hit"
               cx="${screenPoint.x}"
               cy="${screenPoint.y}"
-              r="${zoomMetrics.cornerHandleRadiusPx}"
-              fill="${selectionHighlightColor}"
+              r="${zoomMetrics.cornerHitRadiusPx}"
               data-corner-edge-id="${escapeHtml(edge.id)}"
               data-corner-index="${cornerIndex}"
               data-testid="corner-${escapeHtml(edge.id)}-${cornerIndex}"
+            />
+            <circle
+              class="ping-editor__corner-handle ${showVisibleHandle ? "is-visible" : ""} ${selectedCorner ? "is-selected" : ""} ${hoveredCorner ? "is-hovered" : ""}"
+              cx="${screenPoint.x}"
+              cy="${screenPoint.y}"
+              r="${zoomMetrics.cornerHandleRadiusPx}"
+              data-testid="corner-handle-${escapeHtml(edge.id)}-${cornerIndex}"
+              aria-hidden="true"
             />
           `;
         })
@@ -934,18 +1044,26 @@ function renderThumbs(
       }
 
       const screenPoint = worldToScreen(point, camera, config);
+      const thumbColor = config.thumb.color;
+      const thumbBackgroundColor = config.thumb.backgroundColor ?? thumbColor;
 
       return `
-        <circle
+        <g
           class="ping-editor__thumb"
-          cx="${screenPoint.x}"
-          cy="${screenPoint.y}"
-          r="${zoomMetrics.thumbRadiusPx}"
-          fill="${config.thumb.color}"
           opacity="${config.thumb.opacity}"
           pointer-events="none"
           data-testid="thumb-${index}"
-        />
+        >
+          <circle
+            class="ping-editor__thumb-ring"
+            cx="${screenPoint.x}"
+            cy="${screenPoint.y}"
+            r="${zoomMetrics.thumbRadiusPx}"
+            fill="${thumbBackgroundColor}"
+            stroke="${thumbColor}"
+            stroke-width="${zoomMetrics.thumbStrokeWidthPx}"
+          />
+        </g>
       `;
     })
     .join("");
@@ -1030,11 +1148,13 @@ export function renderSvgMarkup({
     previewRenderState ??
     createPreviewRenderState(snapshot, routes, registry, previewState, config);
   const {
+    previewSnapshot,
     previewNodeIds,
     previewEdgeRoutes,
     hiddenThumbEdgeIds,
     displayRoutes,
   } = effectivePreviewRenderState;
+  const previewEdgesById = new Map(previewSnapshot.edges.map((edge) => [edge.id, edge]));
   const zoomMetrics = createZoomMetrics(camera, config);
   const nodePulseStateByNodeId = new Map(
     (nodePulseStates ?? []).map((entry) => [entry.nodeId, entry]),
@@ -1061,10 +1181,11 @@ export function renderSvgMarkup({
       <g class="ping-editor__edge-layer">
         ${snapshot.edges
           .map((edge) => {
+            const renderEdgeModel = previewEdgesById.get(edge.id) ?? edge;
             const route = previewEdgeRoutes.get(edge.id) ?? getEdgeRoute(snapshot, edge, routes, registry);
 
             return renderEdge(
-              edge,
+              renderEdgeModel,
               route,
               routes,
               camera,

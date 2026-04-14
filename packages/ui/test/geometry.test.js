@@ -7,11 +7,13 @@ import {
   getLayout,
   getNodeDefinition,
   getPortAnchor,
+  routeGraph,
 } from "@ping/core";
 import {
   buildObstacleAwarePreviewRoute,
   buildPreviewRoute,
   doesRouteIntersectBounds,
+  findEdgeCornerInsertTarget,
   getPointAtRouteProgress,
   getPortWorldPoint,
   snapWorldPoint,
@@ -158,4 +160,40 @@ test("multi-io port geometry preserves mux ordering and mirrored demux ordering"
   assert.deepEqual(getPortWorldPoint(snapshot, demux, REGISTRY, "in", 0), { x: 22, y: 10 });
   assert.deepEqual(getPortWorldPoint(snapshot, demux, REGISTRY, "in", 5), { x: 22, y: 13 });
   assert.deepEqual(getPortWorldPoint(snapshot, demux, REGISTRY, "out", 0), { x: 23, y: 11 });
+});
+
+test("edge insert target respects hidden collinear manual corners when choosing the insert index", () => {
+  const snapshot = {
+    nodes: [
+      { id: "node-pulse", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: {} },
+      { id: "node-output", type: "out", pos: { x: 12, y: 0 }, rot: 0, params: {} },
+    ],
+    edges: [
+      {
+        id: "edge-a",
+        from: { nodeId: "node-pulse", portSlot: 0 },
+        to: { nodeId: "node-output", portSlot: 0 },
+        manualCorners: [{ x: 6, y: 1 }],
+      },
+    ],
+    groups: {},
+  };
+  const routes = routeGraph(snapshot, REGISTRY);
+
+  assert.deepEqual(
+    findEdgeCornerInsertTarget(snapshot, routes, REGISTRY, "edge-a", { x: 4.2, y: 1.1 }),
+    {
+      edgeId: "edge-a",
+      index: 0,
+      point: { x: 4, y: 1 },
+    },
+  );
+  assert.deepEqual(
+    findEdgeCornerInsertTarget(snapshot, routes, REGISTRY, "edge-a", { x: 8.4, y: 0.9 }),
+    {
+      edgeId: "edge-a",
+      index: 1,
+      point: { x: 8, y: 1 },
+    },
+  );
 });

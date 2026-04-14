@@ -43,10 +43,25 @@ export function getPresentationClockTimeSec(
   return getClockTimeSec(preferredAudioContext, fallbackNowMs);
 }
 
+export function getTransportClockTimeSec(
+  preferredAudioContext = null,
+  fallbackNowMs = null,
+) {
+  return getPresentationClockTimeSec(preferredAudioContext, fallbackNowMs);
+}
+
 export function tickFromTransport(transport, nowTimeSec) {
   if (!(transport?.bpm > 0) || !Number.isFinite(nowTimeSec)) {
     return Number.isFinite(transport?.originTick) ? transport.originTick : 0;
   }
 
   return transport.originTick + (nowTimeSec - transport.originTimeSec) * (transport.bpm / 60);
+}
+
+export function rebaseTransportAtCurrentTick(transport, nextBpm, nowTimeSec) {
+  return {
+    originTimeSec: nowTimeSec,
+    originTick: tickFromTransport(transport, nowTimeSec),
+    bpm: nextBpm > 0 ? nextBpm : 0,
+  };
 }

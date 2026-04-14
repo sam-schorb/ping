@@ -13,6 +13,18 @@ export function createInspectDslController({
   emitUndo,
   emitGraphOps,
 }) {
+  function scrollPanelToTop(panelScroll, top) {
+    if (!(panelScroll instanceof HTMLElement)) {
+      return;
+    }
+
+    if (typeof panelScroll.scrollTo === "function") {
+      panelScroll.scrollTo({ top, behavior: "auto" });
+    } else {
+      panelScroll.scrollTop = top;
+    }
+  }
+
   function getSelectedGroupBackedNodeContext() {
     if (state.selection.kind !== "node") {
       return null;
@@ -172,11 +184,7 @@ export function createInspectDslController({
     }
 
     if (categoryId === "all") {
-      if (typeof panelScroll.scrollTo === "function") {
-        panelScroll.scrollTo({ top: 0, behavior: "instant" });
-      } else {
-        panelScroll.scrollTop = 0;
-      }
+      scrollPanelToTop(panelScroll, 0);
       return;
     }
 
@@ -190,11 +198,7 @@ export function createInspectDslController({
     const targetRect = target.getBoundingClientRect();
     const nextTop = Math.max(0, panelScroll.scrollTop + (targetRect.top - panelRect.top) - 8);
 
-    if (typeof panelScroll.scrollTo === "function") {
-      panelScroll.scrollTo({ top: nextTop, behavior: "instant" });
-    } else {
-      panelScroll.scrollTop = nextTop;
-    }
+    scrollPanelToTop(panelScroll, nextTop);
   }
 
   function handleApplyInspectDsl() {

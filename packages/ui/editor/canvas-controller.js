@@ -1,4 +1,4 @@
-import { getPortAnchor, resolveRoutingConfig, routeEdge } from "@ping/core";
+import { getPortAnchor, resolveManualCornerDrag, resolveRoutingConfig, routeEdge } from "@ping/core";
 
 import {
   applyPinchGesture,
@@ -11,6 +11,7 @@ import { hitCorner, hitEdge, hitPort } from "./hittest.js";
 import {
   buildObstacleAwarePreviewRoute,
   createEmptyRoute,
+  findEdgeCornerInsertTarget,
   getNodeWorldBounds,
   snapWorldPoint,
 } from "./geometry.js";
@@ -46,6 +47,10 @@ export function createCanvasController({
   emitUndo,
   emitGraphOps,
 }) {
+  function samePoint(a, b) {
+    return a?.x === b?.x && a?.y === b?.y;
+  }
+
   function clearTransientStates({ preserveViewportClick = false } = {}) {
     state.drag = createEmptyDragState();
     state.pan = null;
@@ -65,6 +70,10 @@ export function createCanvasController({
 
   function isTouchPointerEvent(event) {
     return event?.pointerType === "touch";
+  }
+
+  function isTouchContextMenuEvent(event) {
+    return event?.pointerType === "touch" || state.lastPointerType === "touch";
   }
 
   function setTouchGesture(gesture) {
@@ -399,6 +408,28 @@ export function createCanvasController({
     return true;
   }
 
+  function startEdgeCreate(portHit, worldPoint, { suppressViewportClick = false } = {}) {
+    clearNodeSetSelection();
+    state.drag = {
+      kind: "edge-create",
+      from: {
+        nodeId: portHit.nodeId,
+        portSlot: portHit.portSlot,
+        direction: portHit.direction,
+      },
+      cursor: worldPoint,
+      tempCorners: [],
+      previewTargetPort: null,
+    };
+    state.edgeCreatePointerActive = true;
+    if (suppressViewportClick) {
+      state.suppressViewportClick = true;
+    }
+    emitSelection(createEmptySelection());
+    closeMenu();
+    markDirty();
+  }
+
   function getEdgeCreatePreviewPortHit(portHit) {
     if (state.drag.kind !== "edge-create") {
       return null;
@@ -424,6 +455,19 @@ export function createCanvasController({
       cursor: worldPoint,
     };
     markDirty();
+  }
+
+  function undoEdgeCreateCorner() {
+    if (state.drag.kind !== "edge-create" || state.drag.tempCorners.length === 0) {
+      return false;
+    }
+
+    state.drag = {
+      ...state.drag,
+      tempCorners: state.drag.tempCorners.slice(0, -1),
+    };
+    markDirty();
+    return true;
   }
 
   function beginNodeDrag(nodeId, startWorld, startScreen) {
@@ -542,11 +586,25 @@ export function createCanvasController({
       return;
     }
 
-    const snapped = snapWorldPoint(state.drag.currentPoint, state.config);
+    let resolvedPoint = state.drag.resolvedPoint ?? state.drag.startPoint;
+
+    if (!state.drag.resolvedPoint) {
+      try {
+        resolvedPoint = resolveManualCornerDrag({
+          snapshot: state.snapshot,
+          registry: state.registry,
+          edgeId: state.drag.edgeId,
+          cornerIndex: state.drag.cornerIndex,
+          desiredPoint: state.drag.currentPoint ?? state.drag.startPoint,
+        }).resolvedPoint;
+      } catch {
+        resolvedPoint = state.drag.startPoint;
+      }
+    }
 
     if (
-      snapped.x !== state.drag.startPoint.x ||
-      snapped.y !== state.drag.startPoint.y
+      resolvedPoint.x !== state.drag.startPoint.x ||
+      resolvedPoint.y !== state.drag.startPoint.y
     ) {
       emitUndo("move corner");
       emitGraphOps(
@@ -556,7 +614,7 @@ export function createCanvasController({
             payload: {
               edgeId: state.drag.edgeId,
               index: state.drag.cornerIndex,
-              point: snapped,
+              point: resolvedPoint,
             },
           },
         ],
@@ -568,12 +626,47 @@ export function createCanvasController({
     markDirty();
   }
 
-  function cancelEdgeCreate() {
+  function tryInsertEdgeCorner(edgeId, worldPoint) {
+    if (state.selection.kind !== "edge" || state.selection.edgeId !== edgeId) {
+      return false;
+    }
+
+    const insertTarget = findEdgeCornerInsertTarget(
+      state.snapshot,
+      state.routes,
+      state.registry,
+      edgeId,
+      worldPoint,
+    );
+
+    if (!insertTarget) {
+      return false;
+    }
+
+    focusViewport();
+    emitUndo("add corner");
+    emitGraphOps(
+      [
+        {
+          type: "addCorner",
+          payload: {
+            edgeId: insertTarget.edgeId,
+            index: insertTarget.index,
+            point: insertTarget.point,
+          },
+        },
+      ],
+      "add corner",
+    );
+    return true;
+  }
+
+  function cancelEdgeCreate({ preserveViewportClick = false } = {}) {
     if (state.drag.kind !== "edge-create") {
       return;
     }
 
-    clearTransientStates();
+    clearTransientStates({ preserveViewportClick });
     markDirty();
   }
 
@@ -631,6 +724,18 @@ export function createCanvasController({
           return;
         }
 
+        state.suppressViewportClick = true;
+
+        if (
+          portHit.nodeId === state.drag.from.nodeId &&
+          portHit.portSlot === state.drag.from.portSlot &&
+          portHit.direction === state.drag.from.direction
+        ) {
+          cancelEdgeCreate({ preserveViewportClick: true });
+          return;
+        }
+
+        startEdgeCreate(portHit, worldPoint, { suppressViewportClick: true });
         return;
       }
 
@@ -638,25 +743,9 @@ export function createCanvasController({
     }
 
     if (event.button === 0 && (portHit?.direction === "out" || portHit?.direction === "in")) {
-      clearNodeSetSelection();
-      state.drag = {
-        kind: "edge-create",
-        from: {
-          nodeId: portHit.nodeId,
-          portSlot: portHit.portSlot,
-          direction: portHit.direction,
-        },
-        cursor: worldPoint,
-        tempCorners: [],
-        previewTargetPort: null,
-      };
-      state.edgeCreatePointerActive = true;
-      if (touchPointer) {
-        state.suppressViewportClick = true;
-      }
-      emitSelection(createEmptySelection());
-      closeMenu();
-      markDirty();
+      startEdgeCreate(portHit, worldPoint, {
+        suppressViewportClick: touchPointer,
+      });
       return;
     }
 
@@ -855,20 +944,57 @@ export function createCanvasController({
       );
 
       if (!state.dragStarted && distance >= getPointerDragThresholdPx(state.pointerPress.pointerType)) {
+        const initialRoute = state.routes?.edgeRoutes?.get(state.pointerPress.edgeId) ?? null;
         state.drag = {
           kind: "corner",
           edgeId: state.pointerPress.edgeId,
           cornerIndex: state.pointerPress.cornerIndex,
           startPoint: state.pointerPress.startPoint,
           currentPoint: state.pointerPress.startPoint,
+          desiredPoint: state.pointerPress.startPoint,
+          resolvedPoint: state.pointerPress.startPoint,
+          resolvedRoute: initialRoute,
+          resolveStatus: "exact",
         };
         state.dragStarted = true;
       }
 
       if (state.drag.kind === "corner") {
+        const desiredPoint = snapWorldPoint(worldPoint, state.config);
+
+        if (samePoint(state.drag.desiredPoint, desiredPoint)) {
+          state.drag = {
+            ...state.drag,
+            currentPoint: worldPoint,
+          };
+          return;
+        }
+
+        let resolution;
+
+        try {
+          resolution = resolveManualCornerDrag({
+            snapshot: state.snapshot,
+            registry: state.registry,
+            edgeId: state.drag.edgeId,
+            cornerIndex: state.drag.cornerIndex,
+            desiredPoint,
+          });
+        } catch {
+          resolution = {
+            status: "blocked",
+            resolvedPoint: state.drag.resolvedPoint ?? state.drag.startPoint,
+            route: state.drag.resolvedRoute ?? null,
+          };
+        }
+
         state.drag = {
           ...state.drag,
           currentPoint: worldPoint,
+          desiredPoint,
+          resolvedPoint: resolution.resolvedPoint,
+          resolvedRoute: resolution.route,
+          resolveStatus: resolution.status,
         };
         markViewportDirty();
         return;
@@ -974,7 +1100,7 @@ export function createCanvasController({
 
     if (state.pointerPress?.kind === "node" && !state.dragStarted) {
       emitSelection({ kind: "node", nodeId: state.pointerPress.nodeId });
-      clearTransientStates({ preserveViewportClick: touchPointer && state.suppressViewportClick });
+      clearTransientStates({ preserveViewportClick: state.suppressViewportClick });
       return;
     }
 
@@ -984,11 +1110,11 @@ export function createCanvasController({
         edgeId: state.pointerPress.edgeId,
         cornerIndex: state.pointerPress.cornerIndex,
       });
-      clearTransientStates({ preserveViewportClick: touchPointer && state.suppressViewportClick });
+      clearTransientStates({ preserveViewportClick: state.suppressViewportClick });
       return;
     }
 
-    clearTransientStates({ preserveViewportClick: touchPointer && state.suppressViewportClick });
+    clearTransientStates({ preserveViewportClick: state.suppressViewportClick });
   }
 
   function handlePointerCancel(event) {
@@ -1075,6 +1201,10 @@ export function createCanvasController({
       return;
     }
 
+    if (portHit) {
+      return;
+    }
+
     const cornerHit = getCornerHitFromTarget(event.target);
 
     if (cornerHit) {
@@ -1086,6 +1216,20 @@ export function createCanvasController({
     const edgeHit = getEdgeHitFromTarget(event.target);
 
     if (edgeHit) {
+      if (
+        event.detail >= 2 &&
+        state.drag.kind === "none" &&
+        state.touchGesture.kind === "none"
+      ) {
+        const worldPoint = getWorldCursorFromPointer(event, state.viewport, state.camera, state.config);
+
+        if (tryInsertEdgeCorner(edgeHit.edgeId, worldPoint)) {
+          state.skipNextEdgeDoubleClickId = edgeHit.edgeId;
+          return;
+        }
+      }
+
+      state.skipNextEdgeDoubleClickId = null;
       clearNodeSetSelection();
       emitSelection(edgeHit);
       return;
@@ -1102,6 +1246,37 @@ export function createCanvasController({
     emitSelection(createEmptySelection());
   }
 
+  function handleDoubleClick(event) {
+    if (!state.viewport || !isTargetInsideViewport(event.target) || isInteractiveTarget(event.target)) {
+      return;
+    }
+
+    if (event.button !== 0 || state.drag.kind !== "none" || state.touchGesture.kind !== "none") {
+      return;
+    }
+
+    const edgeHit = getEdgeHitFromTarget(event.target);
+
+    if (!edgeHit) {
+      return;
+    }
+
+    if (state.skipNextEdgeDoubleClickId === edgeHit.edgeId) {
+      state.skipNextEdgeDoubleClickId = null;
+      return;
+    }
+
+    if (state.selection.kind !== "edge" || state.selection.edgeId !== edgeHit.edgeId) {
+      return;
+    }
+
+    const worldPoint = getWorldCursorFromPointer(event, state.viewport, state.camera, state.config);
+
+    if (tryInsertEdgeCorner(edgeHit.edgeId, worldPoint)) {
+      event.preventDefault();
+    }
+  }
+
   function handleContextMenu(event) {
     if (!isTargetInsideViewport(event.target)) {
       return;
@@ -1112,6 +1287,11 @@ export function createCanvasController({
     if (state.drag.kind === "edge-create") {
       event.preventDefault();
       cancelEdgeCreate();
+      return;
+    }
+
+    if (isTouchContextMenuEvent(event)) {
+      event.preventDefault();
       return;
     }
 
@@ -1238,9 +1418,11 @@ export function createCanvasController({
     handlePointerUp,
     handlePointerCancel,
     handleViewportClick,
+    handleDoubleClick,
     handleContextMenu,
     handleWheel,
     cancelEdgeCreate,
+    undoEdgeCreateCorner,
     buildPreviewRouteForRender,
     getViewportCursor,
   };

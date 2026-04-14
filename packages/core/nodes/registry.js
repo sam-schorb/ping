@@ -9,6 +9,7 @@ import {
   createDropState,
   createEffectSignal,
   createEveryState,
+  createStepState,
   demuxSignal,
   dropSignal,
   everySignal,
@@ -22,6 +23,7 @@ import {
   speedSignal,
   subSignal,
   switchSignal,
+  stepSignal,
 } from "./behaviors/index.js";
 import { buildPalette as buildPaletteItems } from "./palette.js";
 import {
@@ -439,6 +441,24 @@ export const NODE_REGISTRY = Object.freeze([
     onControl: setParamFromControl,
     onSignal: countSignal,
     paletteOrder: 320,
+  }),
+  defineNode({
+    type: "step",
+    label: "Step",
+    description: "Advance an internal ring accumulator by the current stride and output the new position.",
+    category: "State",
+    icon: "step",
+    color: CATEGORY_COLORS.State,
+    layout: "single-io-control",
+    inputs: 1,
+    outputs: 1,
+    controlPorts: 1,
+    hasParam: true,
+    defaultParam: 1,
+    initState: createStepState,
+    onControl: setParamFromControl,
+    onSignal: stepSignal,
+    paletteOrder: 325,
   }),
   defineFilterNode({
     type: "gtp",

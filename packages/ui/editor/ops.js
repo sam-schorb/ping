@@ -36,6 +36,30 @@ function createPortId(nodeId, direction, portSlot) {
   return `${nodeId}:${direction}:${portSlot}`;
 }
 
+function normalizeConsecutiveDuplicateCorners(manualCorners = []) {
+  const normalized = [];
+
+  for (const point of manualCorners) {
+    const roundedPoint = {
+      x: Math.round(point.x),
+      y: Math.round(point.y),
+    };
+    const previousPoint = normalized[normalized.length - 1];
+
+    if (
+      previousPoint &&
+      previousPoint.x === roundedPoint.x &&
+      previousPoint.y === roundedPoint.y
+    ) {
+      continue;
+    }
+
+    normalized.push(roundedPoint);
+  }
+
+  return normalized;
+}
+
 function normalizeNodeIdSet(nodeIds) {
   return Array.from(
     new Set((Array.isArray(nodeIds) ? nodeIds : []).filter((nodeId) => typeof nodeId === "string")),
@@ -151,10 +175,7 @@ export function createEdgeRecord(id, from, to, manualCorners = []) {
       nodeId: to.nodeId,
       portSlot: to.portSlot,
     },
-    manualCorners: manualCorners.map((point) => ({
-      x: Math.round(point.x),
-      y: Math.round(point.y),
-    })),
+    manualCorners: normalizeConsecutiveDuplicateCorners(manualCorners),
   };
 }
 

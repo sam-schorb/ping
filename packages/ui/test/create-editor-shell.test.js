@@ -646,6 +646,103 @@ test("editor orders the built-in sidebar tabs and uses compact history controls"
   }
 });
 
+test("toolbar delete copy follows selection kind without adding cable-mode text", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "pulse", pos: { x: 6, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-out", type: "out", pos: { x: 12, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-a",
+            from: { nodeId: "node-a", portSlot: 0 },
+            to: { nodeId: "node-out", portSlot: 0 },
+            manualCorners: [{ x: 7, y: 2 }],
+          },
+        ],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const readDeleteToolbarLabel = () =>
+      harness
+        .query("delete-toolbar-button")
+        .querySelector(".ping-editor__toolbar-button-label")
+        ?.textContent.trim();
+
+    assert.equal(readDeleteToolbarLabel(), "Delete");
+    assert.equal(harness.query("delete-toolbar-button").getAttribute("aria-label"), "Delete");
+    assert.equal(harness.query("delete-toolbar-button").getAttribute("title"), "Delete");
+
+    harness.editor.setSelection({ kind: "node", nodeId: "node-a" });
+    await harness.flush();
+    assert.equal(readDeleteToolbarLabel(), "Delete Node");
+    assert.equal(harness.query("delete-toolbar-button").getAttribute("aria-label"), "Delete Node");
+    assert.equal(harness.query("delete-toolbar-button").getAttribute("title"), "Delete Node");
+
+    harness.editor.setSelection({ kind: "edge", edgeId: "edge-a" });
+    await harness.flush();
+    assert.equal(readDeleteToolbarLabel(), "Delete Cable");
+
+    harness.editor.setSelection({ kind: "corner", edgeId: "edge-a", cornerIndex: 0 });
+    await harness.flush();
+    assert.equal(readDeleteToolbarLabel(), "Delete Bend");
+
+    const nodeABox = getNodeScreenBox(harness.query("node-node-a"));
+    harness.pointerDown(harness.query("node-node-a"), {
+      clientX: nodeABox.x + nodeABox.width / 2,
+      clientY: nodeABox.y + nodeABox.height / 2,
+    });
+    harness.pointerUp({
+      clientX: nodeABox.x + nodeABox.width / 2,
+      clientY: nodeABox.y + nodeABox.height / 2,
+    });
+    await harness.flush();
+
+    const nodeBBox = getNodeScreenBox(harness.query("node-node-b"));
+    harness.pointerDown(harness.query("node-node-b"), {
+      clientX: nodeBBox.x + nodeBBox.width / 2,
+      clientY: nodeBBox.y + nodeBBox.height / 2,
+      shiftKey: true,
+    });
+    harness.pointerUp({
+      clientX: nodeBBox.x + nodeBBox.width / 2,
+      clientY: nodeBBox.y + nodeBBox.height / 2,
+      shiftKey: true,
+    });
+    await harness.flush();
+
+    assert.equal(readDeleteToolbarLabel(), "Delete Nodes");
+    assert.equal(harness.query("delete-toolbar-button").getAttribute("aria-label"), "Delete Nodes");
+    assert.equal(harness.query("delete-toolbar-button").getAttribute("title"), "Delete Nodes");
+
+    const outputPort = harness.query("port-node-a-out-0");
+    const outputPoint = getPortScreenPoint(outputPort);
+    harness.pointerDown(outputPort, {
+      clientX: outputPoint.x,
+      clientY: outputPoint.y,
+      pointerType: "mouse",
+      pointerId: 1,
+    });
+    await harness.flush();
+
+    assert.equal(harness.query("desktop-cable-hint"), null);
+
+    const styles = harness.container.querySelector("[data-ping-editor-style]").textContent;
+    assert.doesNotMatch(styles, /\.ping-editor__toolbar-cable-hint\s*\{/);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("docs tab renders alphabetical categories, sorted entries, and jump tags", async () => {
   const dom = setupDom();
 
@@ -661,7 +758,7 @@ test("docs tab renders alphabetical categories, sorted entries, and jump tags", 
     );
     assert.deepEqual(
       tagLabels,
-      ["all", "groups", "logic", "math", "modifiers", "routing", "sinks", "sources", "state"],
+      ["all", "logic", "math", "modifiers", "routing", "sinks", "sources", "state", "code"],
     );
 
     const sectionIds = [...harness.container.querySelectorAll("[data-docs-category-id]")].map((element) =>
@@ -669,26 +766,41 @@ test("docs tab renders alphabetical categories, sorted entries, and jump tags", 
     );
     assert.deepEqual(
       sectionIds,
-      ["groups", "logic", "math", "modifiers", "routing", "sinks", "sources", "state"],
+      ["logic", "math", "modifiers", "routing", "sinks", "sources", "state", "code"],
     );
+    assert.equal(harness.container.querySelector('[data-testid="docs-section-groups"]'), null);
+    assert.equal(harness.query("docs-section-code").querySelector(".ping-editor__docs-entry-title")?.textContent.trim(), "Code");
 
     const mathEntries = [
       ...harness.query("docs-section-math").querySelectorAll("[data-testid^='docs-entry-'] .ping-editor__docs-entry-title"),
     ].map((element) => element.textContent.trim());
     assert.deepEqual(mathEntries, ["Add", "Set", "Sub"]);
 
+    const stateEntries = [
+      ...harness.query("docs-section-state").querySelectorAll("[data-testid^='docs-entry-'] .ping-editor__docs-entry-title"),
+    ].map((element) => element.textContent.trim());
+    assert.deepEqual(stateEntries, ["Count", "Drop", "Every", "Random", "Step"]);
+
     assert.match(harness.query("docs-entry-pulse").textContent, /emit a fixed pulse value of 1/i);
     assert.match(harness.query("docs-entry-pulse").textContent, /ctrl:\s*sets the pulse rate\./i);
     assert.match(harness.query("docs-entry-out").textContent, /ctrl:\s*none\./i);
+    assert.match(harness.query("docs-entry-step").textContent, /stride amount added on each pulse/i);
     assert.equal(
       harness.query("docs-entry-pulse").querySelector(".ping-editor__docs-tag")?.textContent.trim(),
       "sources",
     );
+    assert.equal(
+      harness.query("docs-entry-code").querySelector(".ping-editor__docs-tag")?.textContent.trim(),
+      "code",
+    );
 
     const panelScroll = harness.container.querySelector(".ping-editor__panel-scroll");
     const routingSection = harness.query("docs-section-routing");
+    let lastScrollTo = null;
     panelScroll.scrollTop = 25;
-    panelScroll.scrollTo = ({ top }) => {
+    panelScroll.scrollTo = (options) => {
+      lastScrollTo = options;
+      const { top } = options;
       panelScroll.scrollTop = top;
     };
     panelScroll.getBoundingClientRect = () => ({
@@ -715,10 +827,12 @@ test("docs tab renders alphabetical categories, sorted entries, and jump tags", 
     harness.click(harness.query("docs-tag-routing"));
     await harness.flush();
     assert.equal(panelScroll.scrollTop, 177);
+    assert.deepEqual(lastScrollTo, { top: 177, behavior: "auto" });
 
     harness.click(harness.query("docs-tag-all"));
     await harness.flush();
     assert.equal(panelScroll.scrollTop, 0);
+    assert.deepEqual(lastScrollTo, { top: 0, behavior: "auto" });
 
     harness.unmount();
   } finally {

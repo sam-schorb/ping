@@ -76,6 +76,10 @@ test("editor renders add-node categories as a fixed stacked header instead of a 
       styles,
       /\.ping-editor__menu-item\s*\{[\s\S]*border-radius:\s*16px;[\s\S]*background:\s*var\(--ping-chrome-card-strong\);/,
     );
+    assert.match(
+      styles,
+      /\.ping-editor__menu-category\s*\{[\s\S]*display:\s*grid;[\s\S]*place-items:\s*center;[\s\S]*text-align:\s*center;/,
+    );
 
     harness.unmount();
   } finally {
@@ -385,7 +389,7 @@ test("editor sidebar starts below the toolbar and scrolls internally", async () 
       /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor\s*\{[\s\S]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+auto;[\s\S]*gap:\s*18px;/,
     );
     assert.match(styles, /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__toolbar-docs-button\s*\{[\s\S]*display:\s*inline-flex;/);
-    assert.match(styles, /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__sidebar\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*52px;[\s\S]*left:\s*0;[\s\S]*right:\s*0;[\s\S]*width:\s*100%;/);
+    assert.match(styles, /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__sidebar\s*\{[\s\S]*position:\s*absolute;[\s\S]*top:\s*52px;[\s\S]*left:\s*0;[\s\S]*right:\s*0;[\s\S]*bottom:\s*0;[\s\S]*z-index:\s*9;[\s\S]*width:\s*100%;/);
     assert.match(styles, /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__sidebar\s*\{[\s\S]*border-left:\s*0;[\s\S]*border-right:\s*0;[\s\S]*overflow:\s*visible;/);
     assert.match(styles, /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__sidebar\.is-collapsed\s*\{[\s\S]*display:\s*none;/);
     assert.match(styles, /@media \(max-width:\s*1180px\)\s*\{[\s\S]*\.ping-editor__sidebar-toggle,\s*\.ping-editor__sidebar\.is-collapsed \.ping-editor__sidebar-toggle\s*\{[\s\S]*top:\s*0;/);

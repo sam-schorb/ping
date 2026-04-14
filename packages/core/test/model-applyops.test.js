@@ -339,3 +339,122 @@ test("non-integer corner coordinates are rejected", () => {
   assert.equal(result.errors[0].code, "MODEL_INVALID_POSITION");
   assert.deepEqual(model.getSnapshot().edges[0].manualCorners, []);
 });
+
+test("corner ops collapse consecutive duplicate bends but preserve distinct collinear bends", () => {
+  const model = createModel({
+    nodes: [
+      {
+        id: "node-pulse",
+        type: "pulse",
+        pos: { x: 0, y: 0 },
+        rot: 0,
+        params: {},
+      },
+      {
+        id: "node-output",
+        type: "out",
+        pos: { x: 4, y: 0 },
+        rot: 0,
+        params: {},
+      },
+    ],
+    edges: [
+      {
+        id: "edge-a",
+        from: { nodeId: "node-pulse", portSlot: 0 },
+        to: { nodeId: "node-output", portSlot: 0 },
+        manualCorners: [{ x: 1, y: 0 }],
+      },
+    ],
+  });
+
+  const duplicateAddResult = model.applyOps([
+    {
+      type: "addCorner",
+      payload: {
+        edgeId: "edge-a",
+        index: 1,
+        point: { x: 1, y: 0 },
+      },
+    },
+  ]);
+
+  assert.deepEqual(duplicateAddResult, { ok: true, changed: false });
+  assert.deepEqual(model.getSnapshot().edges[0].manualCorners, [{ x: 1, y: 0 }]);
+
+  const distinctAddResult = model.applyOps([
+    {
+      type: "addCorner",
+      payload: {
+        edgeId: "edge-a",
+        index: 1,
+        point: { x: 2, y: 0 },
+      },
+    },
+  ]);
+
+  assert.deepEqual(distinctAddResult, { ok: true, changed: true });
+  assert.deepEqual(model.getSnapshot().edges[0].manualCorners, [
+    { x: 1, y: 0 },
+    { x: 2, y: 0 },
+  ]);
+
+  const duplicateMoveResult = model.applyOps([
+    {
+      type: "moveCorner",
+      payload: {
+        edgeId: "edge-a",
+        index: 1,
+        point: { x: 1, y: 0 },
+      },
+    },
+  ]);
+
+  assert.deepEqual(duplicateMoveResult, { ok: true, changed: true });
+  assert.deepEqual(model.getSnapshot().edges[0].manualCorners, [{ x: 1, y: 0 }]);
+});
+
+test("removeCorner normalizes legacy duplicate bends down to a single remaining point", () => {
+  const model = createModel({
+    nodes: [
+      {
+        id: "node-pulse",
+        type: "pulse",
+        pos: { x: 0, y: 0 },
+        rot: 0,
+        params: {},
+      },
+      {
+        id: "node-output",
+        type: "out",
+        pos: { x: 4, y: 0 },
+        rot: 0,
+        params: {},
+      },
+    ],
+    edges: [
+      {
+        id: "edge-a",
+        from: { nodeId: "node-pulse", portSlot: 0 },
+        to: { nodeId: "node-output", portSlot: 0 },
+        manualCorners: [
+          { x: 1, y: 0 },
+          { x: 1, y: 0 },
+        ],
+      },
+    ],
+  });
+
+  const result = model.applyOps([
+    {
+      type: "removeCorner",
+      payload: {
+        edgeId: "edge-a",
+        index: 0,
+      },
+    },
+  ]);
+
+  assert.deepEqual(result, { ok: true, changed: true });
+  assert.deepEqual(model.getSnapshot().edges[0].manualCorners, [{ x: 1, y: 0 }]);
+});

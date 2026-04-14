@@ -6,6 +6,8 @@ import {
   getAudibleLatencySec,
   getClockTimeSec,
   getPresentationClockTimeSec,
+  getTransportClockTimeSec,
+  rebaseTransportAtCurrentTick,
   tickFromTransport,
 } from "./presentation-clock.mjs";
 
@@ -48,4 +50,32 @@ test("tickFromTransport falls back to the transport origin when tempo is inactiv
     ),
     13,
   );
+});
+
+test("transport clock time stays on the presentation clock once audio is armed", () => {
+  const audioContext = {
+    currentTime: 8.25,
+    baseLatency: 0.08,
+    outputLatency: 0.04,
+  };
+
+  assert.equal(getTransportClockTimeSec(audioContext, 123456), 8.25);
+});
+
+test("tempo rebasing preserves the current transport tick on the shared presentation clock", () => {
+  const previousTransport = {
+    originTimeSec: 1,
+    originTick: 4,
+    bpm: 70,
+  };
+  const nowTimeSec = 1.375;
+  const currentTick = tickFromTransport(previousTransport, nowTimeSec);
+  const rebasedTransport = rebaseTransportAtCurrentTick(previousTransport, 100, nowTimeSec);
+
+  assert.deepEqual(rebasedTransport, {
+    originTimeSec: nowTimeSec,
+    originTick: currentTick,
+    bpm: 100,
+  });
+  assert.equal(tickFromTransport(rebasedTransport, nowTimeSec), currentTick);
 });

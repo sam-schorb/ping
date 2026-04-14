@@ -26,6 +26,7 @@ export function createInputController({
   handleRotateSelection,
   handleDeleteSelection,
   handleCancelEdgeCreate,
+  handleUndoEdgeCreateCorner,
   handleRenameNode,
   handleSetParam,
   handleGroupOpen,
@@ -216,6 +217,23 @@ export function createInputController({
 
     if (isTextInputTarget(event.target)) {
       return;
+    }
+
+    if (state.drag.kind === "edge-create") {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        handleCancelEdgeCreate();
+        return;
+      }
+
+      if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+
+        if (!handleUndoEdgeCreateCorner()) {
+          handleCancelEdgeCreate();
+        }
+        return;
+      }
     }
 
     const wantsUndo = (event.metaKey || event.ctrlKey) && !event.shiftKey && (event.key === "z" || event.key === "Z");

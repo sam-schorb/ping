@@ -450,10 +450,25 @@ function routeSnapshotEdge(snapshot, edgeId, registry) {
   }
 }
 
+function stepToward(start, end) {
+  if (!start || !end) {
+    return start ? { ...start } : end ? { ...end } : { x: 0, y: 0 };
+  }
+
+  if (start.x === end.x && start.y === end.y) {
+    return { ...start };
+  }
+
+  return {
+    x: start.x + Math.sign(end.x - start.x),
+    y: start.y + Math.sign(end.y - start.y),
+  };
+}
+
 function createChannelCandidates(snapshot, registry, route, offset) {
   const bounds = buildBounds(snapshot, registry);
-  const startStub = route.points[1] ?? route.points[0];
-  const endStub = route.points.at(-2) ?? route.points.at(-1);
+  const startStub = stepToward(route.points[0], route.points[1] ?? route.points[0]);
+  const endStub = stepToward(route.points.at(-1), route.points.at(-2) ?? route.points.at(-1));
   const topY = bounds.minY - CHANNEL_MARGIN - offset;
   const bottomY = bounds.maxY + CHANNEL_MARGIN + offset;
   const leftX = bounds.minX - CHANNEL_MARGIN - offset;

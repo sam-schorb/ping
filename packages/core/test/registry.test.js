@@ -31,6 +31,7 @@ test("NODE_REGISTRY includes the complete built-in node set and validates cleanl
     "drop",
     "random",
     "count",
+    "step",
     "gtp",
     "ltp",
     "gtep",
@@ -55,11 +56,13 @@ test("buildRegistryIndex and getNodeDefinition expose registry lookup helpers", 
   const out = getNodeDefinition("out", index);
   const gtep = getNodeDefinition("gtep", index);
   const ltep = getNodeDefinition("ltep", index);
+  const step = getNodeDefinition("step", index);
 
   assert.equal(index.size, NODE_REGISTRY.length);
   assert.equal(pulse?.label, "Pulse");
   assert.equal(out?.label, "Out");
   assert.equal(code?.label, "Code");
+  assert.equal(step?.label, "Step");
   assert.equal(gtep?.label, "Greater Than Equal");
   assert.equal(gtep?.canvasLabel, "GTE");
   assert.equal(ltep?.label, "Less Than Equal");

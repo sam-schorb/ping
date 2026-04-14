@@ -68,7 +68,7 @@ export function buildMenuMarkup(state) {
         Math.max(margin, state.viewportSize.width - width - margin),
       );
   const y = compact
-    ? Math.max(margin, state.viewportSize.height - maxHeight - margin)
+    ? margin
     : clamp(
         state.menu.screen.y,
         margin,

@@ -102,6 +102,17 @@ test("exportGroupDsl renders drop as a canonical single-stream chain node", () =
   assertDsl(group, "$0.drop(3).outlet(0)");
 });
 
+test("exportGroupDsl renders step as a canonical single-stream chain node", () => {
+  const group = createGroupDefinition({
+    id: "group-step",
+    nodes: [createNode({ id: "node-step", type: "step", x: 0, y: 0, param: 3 })],
+    inputs: [{ nodeId: "node-step", portSlot: 0 }],
+    outputs: [{ nodeId: "node-step", portSlot: 0 }],
+  });
+
+  assertDsl(group, "$0.step(3).outlet(0)");
+});
+
 test("exportGroupDsl renders control-only boundary inputs as braced control clauses", () => {
   const group = createGroupDefinition({
     id: "group-control-inlet",

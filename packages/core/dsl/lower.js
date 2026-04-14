@@ -1,8 +1,8 @@
 import { normalizeGroupDefinition } from "../graph/snapshot.js";
-import { CURRENT_GROUP_DSL_FORMAT_VERSION } from "./constants.js";
+import { CURRENT_GROUP_DSL_FORMAT_VERSION, DSL_RESERVED_WORDS } from "./constants.js";
 import { layoutFreshDslGroup } from "./layout.js";
 import { computeGroupDslSemanticHash } from "./hash.js";
-import { DSL_RESERVED_WORDS, parseGroupDsl } from "./parse.js";
+import { parseGroupDsl } from "./parse.js";
 import { reconcileDslGroup } from "./reconcile.js";
 import {
   DSL_ERROR_CODES,

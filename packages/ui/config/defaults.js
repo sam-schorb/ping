@@ -48,7 +48,7 @@ export const DEFAULT_UI_CONFIG = Object.freeze({
     radiusPx: 4,
     strokeWidthPx: 1,
     hoverRadiusPx: 8,
-    touchHoverRadiusPx: 18,
+    touchHoverRadiusPx: 12,
     signalIn: "#e45d5d",
     signalOut: "#f2c14e",
     control: "#4c8fd9",
@@ -67,7 +67,8 @@ export const DEFAULT_UI_CONFIG = Object.freeze({
   thumb: {
     radiusPx: 4,
     strokeWidthPx: 1,
-    color: "#2c2823",
+    color: "#7f3f2a",
+    backgroundColor: "#f28c28",
     opacity: 0.9,
   },
   selection: {

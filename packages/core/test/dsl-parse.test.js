@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { DSL_ERROR_CODES, parseGroupDsl } from "../src/index.js";
 
 test("parseGroupDsl parses canonical chain and outlet syntax", () => {
-  const result = parseGroupDsl("$0.every(2).drop(3).count(4).outlet(0)");
+  const result = parseGroupDsl("$0.every(2).drop(3).step(4).count(5).outlet(0)");
 
   assert.equal(result.ok, true);
   assert.equal(result.ast.statements.length, 1);
@@ -23,7 +23,8 @@ test("parseGroupDsl parses canonical chain and outlet syntax", () => {
     [
       { name: "every", param: 2, args: 0 },
       { name: "drop", param: 3, args: 0 },
-      { name: "count", param: 4, args: 0 },
+      { name: "step", param: 4, args: 0 },
+      { name: "count", param: 5, args: 0 },
     ],
   );
   assert.deepEqual(statement.expr.terminal, {

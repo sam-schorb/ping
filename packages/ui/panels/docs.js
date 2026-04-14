@@ -26,8 +26,18 @@ function sortPaletteItems(items) {
 
 function buildDocsCategories(palette) {
   const byCategory = new Map();
+  const codeItems = [];
 
   for (const item of palette ?? []) {
+    if (item?.type === "group") {
+      continue;
+    }
+
+    if (item?.type === "code") {
+      codeItems.push(item);
+      continue;
+    }
+
     const category = typeof item.category === "string" && item.category.trim() !== "" ? item.category : "Other";
 
     if (!byCategory.has(category)) {
@@ -37,14 +47,27 @@ function buildDocsCategories(palette) {
     byCategory.get(category).push(item);
   }
 
-  return [...byCategory.entries()]
+  const categories = [...byCategory.entries()]
     .map(([category, items]) => ({
       category,
       categoryId: normalizeCategoryId(category),
       label: formatCategoryLabel(category),
+      themeCategory: category,
       items: sortPaletteItems(items),
     }))
     .sort((left, right) => left.category.localeCompare(right.category));
+
+  if (codeItems.length > 0) {
+    categories.push({
+      category: "Code",
+      categoryId: "code",
+      label: "code",
+      themeCategory: "Groups",
+      items: sortPaletteItems(codeItems),
+    });
+  }
+
+  return categories;
 }
 
 function getCategoryTagStyle(category, config) {
@@ -93,6 +116,8 @@ function getControlPortDescription(item) {
       return "Sets the maximum random output value.";
     case "count":
       return "Sets the wrap limit.";
+    case "step":
+      return "Sets the stride amount added on each pulse.";
     case "gtp":
     case "ltp":
     case "gtep":
@@ -158,7 +183,7 @@ export function renderDocsPanel({ palette, config }) {
         ${categories
           .map((entry) =>
             renderDocsTag(entry.categoryId, entry.label, config, {
-              themeCategory: entry.category,
+              themeCategory: entry.themeCategory,
               testId: `docs-tag-${entry.categoryId}`,
             }),
           )
@@ -183,7 +208,7 @@ export function renderDocsPanel({ palette, config }) {
                             <h3 class="ping-editor__docs-entry-title">${escapeHtml(item.label)}</h3>
                             ${renderDocsTag(entry.categoryId, entry.label, config, {
                               compact: true,
-                              themeCategory: entry.category,
+                              themeCategory: entry.themeCategory,
                             })}
                           </div>
                           <p class="ping-editor__docs-entry-copy">${escapeHtml(item.description)}</p>

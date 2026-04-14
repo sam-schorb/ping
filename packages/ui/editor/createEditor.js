@@ -131,6 +131,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     dragStarted: false,
     edgeCreatePointerActive: false,
     suppressViewportClick: false,
+    skipNextEdgeDoubleClickId: null,
     groupDraft: null,
     idCounters: createIdFactory(),
     creationOffset: 0,
@@ -1079,6 +1080,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     handleRotateSelection,
     handleDeleteSelection,
     handleCancelEdgeCreate: canvasController.cancelEdgeCreate,
+    handleUndoEdgeCreateCorner: canvasController.undoEdgeCreateCorner,
     handleRenameNode,
     handleSetParam,
     handleGroupOpen,
@@ -1141,6 +1143,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     updateViewportSize();
 
     state.root.addEventListener("click", handleRootClick);
+    state.root.addEventListener("dblclick", canvasController.handleDoubleClick);
     state.root.addEventListener("change", inputController.handleChange);
     state.root.addEventListener("input", inputController.handleInput);
     state.root.addEventListener("focusin", inputController.handleFocusIn);
@@ -1169,6 +1172,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     state.mounted = false;
     window.cancelAnimationFrame(state.frameId);
     state.root.removeEventListener("click", handleRootClick);
+    state.root.removeEventListener("dblclick", canvasController.handleDoubleClick);
     state.root.removeEventListener("change", inputController.handleChange);
     state.root.removeEventListener("input", inputController.handleInput);
     state.root.removeEventListener("focusin", inputController.handleFocusIn);

@@ -1,5 +1,6 @@
 import {
   buildOrthogonalRoute,
+  getOrthogonalRouteDistanceAtPoint,
   getNodeRoutingBounds,
   getPortSideSlot,
   isGroupBackedNodeType,
@@ -314,8 +315,170 @@ export function resolveRenderableEdgeRoute(edge, snapshot, routes, registry) {
   return createFallbackRoute(edge, snapshot, registry);
 }
 
+function distanceSquared(left, right) {
+  const dx = left.x - right.x;
+  const dy = left.y - right.y;
+  return dx * dx + dy * dy;
+}
+
 function samePoint(left, right) {
   return left.x === right.x && left.y === right.y;
+}
+
+function projectPointOntoOrthogonalSegment(point, start, end) {
+  if (start.x === end.x) {
+    return {
+      x: start.x,
+      y: Math.min(Math.max(point.y, Math.min(start.y, end.y)), Math.max(start.y, end.y)),
+    };
+  }
+
+  if (start.y === end.y) {
+    return {
+      x: Math.min(Math.max(point.x, Math.min(start.x, end.x)), Math.max(start.x, end.x)),
+      y: start.y,
+    };
+  }
+
+  return null;
+}
+
+function snapProjectedPointToSegment(projected, start, end) {
+  if (start.x === end.x) {
+    return {
+      x: start.x,
+      y: Math.min(
+        Math.max(Math.round(projected.y), Math.min(start.y, end.y)),
+        Math.max(start.y, end.y),
+      ),
+    };
+  }
+
+  if (start.y === end.y) {
+    return {
+      x: Math.min(
+        Math.max(Math.round(projected.x), Math.min(start.x, end.x)),
+        Math.max(start.x, end.x),
+      ),
+      y: start.y,
+    };
+  }
+
+  return null;
+}
+
+function getNearestRouteProjection(points, worldPoint) {
+  if (!Array.isArray(points) || points.length < 2) {
+    return null;
+  }
+
+  let best = null;
+  let traversed = 0;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1];
+    const end = points[index];
+    const projectedPoint = projectPointOntoOrthogonalSegment(worldPoint, start, end);
+
+    if (!projectedPoint) {
+      traversed += Math.abs(end.x - start.x) + Math.abs(end.y - start.y);
+      continue;
+    }
+
+    const snappedPoint = snapProjectedPointToSegment(projectedPoint, start, end);
+    const distance = distanceSquared(worldPoint, projectedPoint);
+    const distanceAlongRoute =
+      traversed + Math.abs(snappedPoint.x - start.x) + Math.abs(snappedPoint.y - start.y);
+
+    if (
+      !best ||
+      distance < best.distance ||
+      (distance === best.distance && distanceAlongRoute < best.distanceAlongRoute)
+    ) {
+      best = {
+        segmentIndex: index - 1,
+        point: snappedPoint,
+        distance,
+        distanceAlongRoute,
+      };
+    }
+
+    traversed += Math.abs(end.x - start.x) + Math.abs(end.y - start.y);
+  }
+
+  return best;
+}
+
+function getManualCornerDistancesAlongRoute(route, manualCorners) {
+  const distances = [];
+  let minimumDistance = -Infinity;
+
+  for (const corner of manualCorners ?? []) {
+    const match = getOrthogonalRouteDistanceAtPoint(route.points, corner, {
+      minimumDistance,
+    });
+
+    if (!match) {
+      return null;
+    }
+
+    distances.push(match.distance);
+    minimumDistance = match.distance;
+  }
+
+  return distances;
+}
+
+export function findEdgeCornerInsertTarget(snapshot, routes, registry, edgeId, worldPoint) {
+  const edge = snapshot.edges.find((entry) => entry.id === edgeId);
+
+  if (!edge) {
+    return null;
+  }
+
+  const route = resolveRenderableEdgeRoute(edge, snapshot, routes, registry);
+
+  if (!route?.points || route.points.length < 2) {
+    return null;
+  }
+
+  const projection = getNearestRouteProjection(route.points, worldPoint);
+
+  if (!projection) {
+    return null;
+  }
+
+  if (
+    samePoint(projection.point, route.points[0]) ||
+    samePoint(projection.point, route.points.at(-1))
+  ) {
+    return null;
+  }
+
+  if ((edge.manualCorners ?? []).some((corner) => samePoint(corner, projection.point))) {
+    return null;
+  }
+
+  const cornerDistances = getManualCornerDistancesAlongRoute(route, edge.manualCorners ?? []);
+
+  if (!cornerDistances) {
+    return null;
+  }
+
+  let insertIndex = 0;
+
+  while (
+    insertIndex < cornerDistances.length &&
+    cornerDistances[insertIndex] < projection.distanceAlongRoute
+  ) {
+    insertIndex += 1;
+  }
+
+  return {
+    edgeId,
+    index: insertIndex,
+    point: projection.point,
+  };
 }
 
 function snapPreviewPoint(point) {

@@ -624,6 +624,8 @@ export function createStyles(config) {
         overflow: auto;
         padding: 14px;
         min-height: 0;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
       }
       .ping-editor__panel-section {
         display: grid;
@@ -940,6 +942,8 @@ export function createStyles(config) {
         gap: 6px;
       }
       .ping-editor__menu-category {
+        display: grid;
+        place-items: center;
         min-width: 0;
         min-height: 36px;
         border: 1px solid var(--ping-chrome-border);
@@ -953,6 +957,7 @@ export function createStyles(config) {
         line-height: 1.15;
         letter-spacing: 0.03em;
         cursor: pointer;
+        text-align: center;
         text-wrap: balance;
         text-transform: lowercase;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26);
@@ -1138,9 +1143,33 @@ export function createStyles(config) {
         width: 100%;
         height: 100%;
       }
-      .ping-editor__corner.is-selected {
+      .ping-editor__corner-hit {
+        fill: transparent;
+        pointer-events: all;
+      }
+      .ping-editor__corner-handle {
+        fill: rgba(255, 252, 248, 0.96);
         stroke: ${selectionHighlightColor};
-        stroke-width: var(--ping-selection-stroke-width, ${config.selection.strokeWidthPx});
+        stroke-width: ${Math.max(1.25, config.port.strokeWidthPx + 0.5)};
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          opacity 120ms ease,
+          fill 120ms ease,
+          stroke 120ms ease;
+      }
+      .ping-editor__corner-handle.is-visible {
+        opacity: 0.92;
+      }
+      .ping-editor__corner-handle.is-hovered {
+        fill: ${config.selection.hoverColor ?? selectionHighlightColor};
+        stroke: ${config.node.stroke};
+        opacity: 1;
+      }
+      .ping-editor__corner-handle.is-selected {
+        fill: ${selectionHighlightColor};
+        stroke: ${config.node.stroke};
+        opacity: 1;
       }
       .ping-editor__node.is-hovered,
       .ping-editor__edge-path.is-hovered,
@@ -1190,7 +1219,8 @@ export function createStyles(config) {
           top: ${collapsedSidebarWidthPx}px;
           left: 0;
           right: 0;
-          bottom: auto;
+          bottom: 0;
+          z-index: 9;
           width: 100%;
           min-width: 0;
           max-width: none;

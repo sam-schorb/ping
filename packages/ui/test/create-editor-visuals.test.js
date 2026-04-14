@@ -3,6 +3,7 @@ import {
   assert,
   createDefaultSampleSlots,
   DEFAULT_TEMPO_BPM,
+  getOrthogonalRouteDistanceAtPoint,
   getPortAnchor,
   routeGraph,
   buildObstacleAwarePreviewRoute,
@@ -306,6 +307,261 @@ test("editor uses crosshair for box selection and move for corner drags", async 
   }
 });
 
+test("corner handles stay quiet until their edge or corner is engaged", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 10, y: 2 }, rot: 0, params: {} },
+          { id: "node-c", type: "pulse", pos: { x: 2, y: 6 }, rot: 0, params: { param: 1 } },
+          { id: "node-d", type: "out", pos: { x: 10, y: 6 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-a",
+            from: { nodeId: "node-a", portSlot: 0 },
+            to: { nodeId: "node-b", portSlot: 0 },
+            manualCorners: [{ x: 6, y: 2 }],
+          },
+          {
+            id: "edge-b",
+            from: { nodeId: "node-c", portSlot: 0 },
+            to: { nodeId: "node-d", portSlot: 0 },
+            manualCorners: [{ x: 6, y: 6 }],
+          },
+        ],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const readHandleClasses = (edgeId) =>
+      [...harness.query(`corner-handle-${edgeId}-0`).classList.values()];
+
+    const edgeAHit = harness.query("edge-edge-a").querySelector(".ping-editor__edge-hit");
+    const cornerAHit = harness.query("corner-edge-a-0");
+    const cornerAHandle = harness.query("corner-handle-edge-a-0");
+    const cornerBHandle = harness.query("corner-handle-edge-b-0");
+
+    assert.equal(readHandleClasses("edge-a").includes("is-visible"), false);
+    assert.equal(readHandleClasses("edge-b").includes("is-visible"), false);
+    assert.ok(Number(cornerAHit.getAttribute("r")) > Number(cornerAHandle.getAttribute("r")));
+    assert.ok(
+      Number(harness.query("corner-edge-b-0").getAttribute("r")) > Number(cornerBHandle.getAttribute("r")),
+    );
+
+    harness.pointerMove(edgeAHit, { clientX: 120, clientY: 48 });
+    await harness.flush();
+    assert.equal(readHandleClasses("edge-a").includes("is-visible"), true);
+    assert.equal(readHandleClasses("edge-b").includes("is-visible"), false);
+
+    harness.pointerMove(harness.query("editor-viewport"), { clientX: 16, clientY: 16 });
+    await harness.flush();
+    assert.equal(readHandleClasses("edge-a").includes("is-visible"), false);
+    assert.equal(readHandleClasses("edge-b").includes("is-visible"), false);
+
+    const refreshedCornerBHit = harness.query("corner-edge-b-0");
+    harness.pointerMove(refreshedCornerBHit, {
+      clientX: Number(refreshedCornerBHit.getAttribute("cx")),
+      clientY: Number(refreshedCornerBHit.getAttribute("cy")),
+    });
+    await harness.flush();
+    assert.equal(readHandleClasses("edge-a").includes("is-visible"), false);
+    assert.equal(readHandleClasses("edge-b").includes("is-visible"), true);
+    assert.equal(readHandleClasses("edge-b").includes("is-hovered"), true);
+
+    harness.pointerMove(harness.query("editor-viewport"), { clientX: 16, clientY: 16 });
+    await harness.flush();
+
+    harness.editor.setSelection({ kind: "edge", edgeId: "edge-a" });
+    await harness.flush();
+    assert.equal(readHandleClasses("edge-a").includes("is-visible"), true);
+    assert.equal(readHandleClasses("edge-b").includes("is-visible"), false);
+
+    harness.editor.setSelection({ kind: "corner", edgeId: "edge-b", cornerIndex: 0 });
+    await harness.flush();
+    assert.equal(readHandleClasses("edge-a").includes("is-visible"), false);
+    assert.equal(readHandleClasses("edge-b").includes("is-visible"), true);
+    assert.equal(readHandleClasses("edge-b").includes("is-selected"), true);
+
+    const styles = harness.container.querySelector("[data-ping-editor-style]").textContent;
+    assert.match(
+      styles,
+      /\.ping-editor__corner-hit\s*\{[\s\S]*fill:\s*transparent;[\s\S]*pointer-events:\s*all;/,
+    );
+    assert.match(
+      styles,
+      /\.ping-editor__corner-handle\s*\{[\s\S]*opacity:\s*0;[\s\S]*pointer-events:\s*none;/,
+    );
+    assert.match(
+      styles,
+      /\.ping-editor__corner-handle\.is-visible\s*\{[\s\S]*opacity:\s*0\.92;/,
+    );
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("corner drags preview the snapped bend position and rerouted path before commit", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 12, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-a",
+            from: { nodeId: "node-a", portSlot: 0 },
+            to: { nodeId: "node-b", portSlot: 0 },
+            manualCorners: [{ x: 6, y: 2 }],
+          },
+        ],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const edgePath = () => harness.query("edge-edge-a").querySelector(".ping-editor__edge-path");
+    const cornerHit = harness.query("corner-edge-a-0");
+    const startPoint = {
+      x: Number(cornerHit.getAttribute("cx")),
+      y: Number(cornerHit.getAttribute("cy")),
+    };
+    const expectedPreviewCorner = { x: 8, y: 3 };
+    const expectedPreviewSnapshot = {
+      ...harness.snapshot,
+      edges: harness.snapshot.edges.map((edge) =>
+        edge.id === "edge-a"
+          ? {
+              ...edge,
+              manualCorners: [expectedPreviewCorner],
+            }
+          : edge,
+      ),
+    };
+    const expectedPreviewPath = toScreenPath(
+      routeGraph(expectedPreviewSnapshot, TEST_REGISTRY).edgeRoutes.get("edge-a"),
+      { x: 0, y: 0, scale: 1 },
+      DEFAULT_UI_CONFIG,
+    );
+
+    assert.deepEqual(harness.snapshot.edges[0].manualCorners, [{ x: 6, y: 2 }]);
+    const committedPath = edgePath().getAttribute("d");
+
+    harness.pointerDown(cornerHit, {
+      clientX: startPoint.x,
+      clientY: startPoint.y,
+    });
+    harness.pointerMove(harness.query("editor-viewport"), {
+      clientX: startPoint.x + 48,
+      clientY: startPoint.y + 24,
+    });
+    await harness.flush();
+
+    const previewCornerHandle = harness.query("corner-handle-edge-a-0");
+    const previewCornerHit = harness.query("corner-edge-a-0");
+    assert.equal(Number(previewCornerHandle.getAttribute("cx")), startPoint.x + 48);
+    assert.equal(Number(previewCornerHandle.getAttribute("cy")), startPoint.y + 24);
+    assert.equal(Number(previewCornerHit.getAttribute("cx")), startPoint.x + 48);
+    assert.equal(Number(previewCornerHit.getAttribute("cy")), startPoint.y + 24);
+    assert.equal(edgePath().getAttribute("d"), expectedPreviewPath);
+    assert.notEqual(edgePath().getAttribute("d"), committedPath);
+    assert.deepEqual(harness.snapshot.edges[0].manualCorners, [{ x: 6, y: 2 }]);
+
+    harness.pointerUp({
+      clientX: startPoint.x + 48,
+      clientY: startPoint.y + 24,
+    });
+    await harness.flush();
+
+    assert.deepEqual(harness.snapshot.edges[0].manualCorners, [expectedPreviewCorner]);
+    assert.equal(edgePath().getAttribute("d"), expectedPreviewPath);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("corner drags clamp illegal preview positions and commit only legal routed geometry", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-blocker", type: "set", pos: { x: 8, y: 2 }, rot: 0, params: { param: 3 } },
+          { id: "node-b", type: "out", pos: { x: 14, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-a",
+            from: { nodeId: "node-a", portSlot: 0 },
+            to: { nodeId: "node-b", portSlot: 0 },
+            manualCorners: [{ x: 6, y: 2 }],
+          },
+        ],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const edgePath = () => harness.query("edge-edge-a").querySelector(".ping-editor__edge-path");
+    const cornerHit = harness.query("corner-edge-a-0");
+    const startPoint = {
+      x: Number(cornerHit.getAttribute("cx")),
+      y: Number(cornerHit.getAttribute("cy")),
+    };
+
+    harness.pointerDown(cornerHit, {
+      clientX: startPoint.x,
+      clientY: startPoint.y,
+    });
+    harness.pointerMove(harness.query("editor-viewport"), {
+      clientX: startPoint.x + 72,
+      clientY: startPoint.y + 24,
+    });
+    await harness.flush();
+
+    const previewHandle = harness.query("corner-handle-edge-a-0");
+    const previewHandleWorld = {
+      x: Number(previewHandle.getAttribute("cx")) / DEFAULT_UI_CONFIG.grid.GRID_PX,
+      y: Number(previewHandle.getAttribute("cy")) / DEFAULT_UI_CONFIG.grid.GRID_PX,
+    };
+
+    assert.notDeepEqual(previewHandleWorld, { x: 9, y: 3 });
+    assert.notEqual(edgePath().getAttribute("d"), "");
+
+    harness.pointerUp({
+      clientX: startPoint.x + 72,
+      clientY: startPoint.y + 24,
+    });
+    await harness.flush();
+
+    const committedCorner = harness.snapshot.edges[0].manualCorners[0];
+    const committedRoutes = routeGraph(harness.snapshot, TEST_REGISTRY);
+    const committedRoute = committedRoutes.edgeRoutes.get("edge-a");
+
+    assert.deepEqual(committedRoutes.errors ?? [], []);
+    assert.notDeepEqual(committedCorner, { x: 9, y: 3 });
+    assert.notEqual(getOrthogonalRouteDistanceAtPoint(committedRoute.points, committedCorner), null);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("editor reserves ctrl-wheel for zoom and keeps a full-width desktop viewport shell", async () => {
   const dom = setupDom();
 
@@ -396,6 +652,7 @@ test("zooming in scales graph chrome while keeping hit targets stable", async ()
     const beforeLabel = beforeNode.querySelector(".ping-editor__node-label");
     const beforeIcon = beforeNode.querySelector(".ping-editor__node-icon");
     const beforeThumb = harness.query("thumb-0");
+    const beforeThumbRing = beforeThumb.querySelector(".ping-editor__thumb-ring");
 
     for (let index = 0; index < 6; index += 1) {
       dispatchWheel(dom.window, harness.query("editor-viewport"), {
@@ -416,6 +673,7 @@ test("zooming in scales graph chrome while keeping hit targets stable", async ()
     const afterLabel = afterNode.querySelector(".ping-editor__node-label");
     const afterIcon = afterNode.querySelector(".ping-editor__node-icon");
     const afterThumb = harness.query("thumb-0");
+    const afterThumbRing = afterThumb.querySelector(".ping-editor__thumb-ring");
 
     assert.ok(Number(afterRect.getAttribute("width")) > Number(beforeRect.getAttribute("width")));
     assert.ok(Number(afterRect.getAttribute("rx")) > Number(beforeRect.getAttribute("rx")));
@@ -434,7 +692,102 @@ test("zooming in scales graph chrome while keeping hit targets stable", async ()
     assert.ok(Number(afterLabel.getAttribute("font-size")) > Number(beforeLabel.getAttribute("font-size")));
     assert.equal(beforeIcon, null);
     assert.equal(afterIcon, null);
-    assert.ok(Number(afterThumb.getAttribute("r")) > Number(beforeThumb.getAttribute("r")));
+    assert.ok(Number(afterThumbRing.getAttribute("r")) > Number(beforeThumbRing.getAttribute("r")));
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("thumb arrival does not leave a flash artifact when the thumb reaches the input", async () => {
+  const dom = setupDom();
+
+  try {
+    const runtime = createRuntimeStub();
+    const harness = createEditorHarness({
+      runtime,
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-a",
+            from: { nodeId: "node-a", portSlot: 0 },
+            to: { nodeId: "node-b", portSlot: 0 },
+            manualCorners: [],
+          },
+        ],
+        groups: {},
+      },
+    });
+    await harness.flush(6);
+
+    runtime.thumbs = [{ edgeId: "edge-a", progress: 0.5, speed: 1, emitTick: 0 }];
+    await harness.flush(6);
+    assert.equal(harness.container.querySelector('[data-testid="thumb-arrival-flash-0"]'), null);
+
+    runtime.thumbs = [];
+    await harness.flush(6);
+    assert.equal(harness.container.querySelector('[data-testid="thumb-arrival-flash-0"]'), null);
+
+    runtime.thumbs = [{ edgeId: "edge-a", progress: 1, speed: 1, emitTick: 1 }];
+    await harness.flush(6);
+    assert.ok(harness.query("thumb-0"));
+
+    runtime.thumbs = [];
+    await harness.flush(6);
+    assert.equal(harness.container.querySelector('[data-testid="thumb-arrival-flash-0"]'), null);
+    assert.equal(harness.container.querySelector('[data-testid="thumb-0"]'), null);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("thumbs render as a single filled ring with separate fill and stroke colors", async () => {
+  const dom = setupDom();
+
+  try {
+    const runtime = createRuntimeStub();
+    runtime.thumbs = [{ edgeId: "edge-a", progress: 0.5, speed: 1, emitTick: 0 }];
+    const harness = createEditorHarness({
+      runtime,
+      config: mergeUIConfig(DEFAULT_UI_CONFIG, {
+        thumb: {
+          color: "#b24a37",
+          backgroundColor: "#f0bf79",
+          opacity: 0.82,
+        },
+      }),
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-a",
+            from: { nodeId: "node-a", portSlot: 0 },
+            to: { nodeId: "node-b", portSlot: 0 },
+            manualCorners: [],
+          },
+        ],
+        groups: {},
+      },
+    });
+    await harness.flush(6);
+
+    const thumb = harness.query("thumb-0");
+    const ring = thumb.querySelector(".ping-editor__thumb-ring");
+
+    assert.equal(thumb.getAttribute("opacity"), "0.82");
+    assert.equal(ring.getAttribute("fill"), "#f0bf79");
+    assert.equal(ring.getAttribute("stroke"), "#b24a37");
+    assert.equal(thumb.querySelector(".ping-editor__thumb-core"), null);
 
     harness.unmount();
   } finally {
@@ -833,4 +1186,3 @@ test("node labels hide sooner and icons move into the top two thirds when zoomed
     dom.cleanup();
   }
 });
-

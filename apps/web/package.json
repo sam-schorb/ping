@@ -6,6 +6,7 @@
     "sync:dough": "node scripts/sync-dough-assets.mjs",
     "predev": "npm run sync:dough",
     "dev": "next dev --webpack",
+    "test": "node --test app/*.test.mjs",
     "prebuild": "npm run sync:dough",
     "build": "next build",
     "start": "next start",

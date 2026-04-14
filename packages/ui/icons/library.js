@@ -22,6 +22,7 @@ export const DEFAULT_ICON_LIBRARY = Object.freeze({
   drop: { viewBox: "0 0 24 24", path: "M5 6h14v2H5zM5 11h5m4 0h5M5 16h14v2H5z" },
   random: { viewBox: "0 0 24 24", path: "M6 6h12v12H6zM9 9h2v2H9zM13 9h2v2h-2zM9 13h2v2H9zM13 13h2v2h-2z" },
   count: { viewBox: "0 0 24 24", path: "M6 6h4v12H6zM14 6h4v12h-4z" },
+  step: { viewBox: "0 0 24 24", path: "M6 17h4v-4h4V9h4V5" },
   gtp: { viewBox: "0 0 24 24", path: "M8 6l8 6-8 6v-3l4-3-4-3V6z" },
   ltp: { viewBox: "0 0 24 24", path: "M16 6l-8 6 8 6v-3l-4-3 4-3V6z" },
   gtep: { viewBox: "0 0 24 24", path: "M7 6h2v12H7zM10 6l8 6-8 6v-3l4-3-4-3V6z" },

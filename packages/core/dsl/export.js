@@ -2,36 +2,10 @@ import {
   DSL_ERROR_CODES,
   createDslIssue,
 } from "./errors.js";
+import { DSL_RESERVED_WORDS } from "./constants.js";
 import { buildSemanticGroupIR } from "./ir.js";
 
-const RESERVED_BINDING_NAMES = new Set([
-  "pulse",
-  "out",
-  "mux",
-  "demux",
-  "switch",
-  "block",
-  "add",
-  "sub",
-  "set",
-  "speed",
-  "pitch",
-  "decay",
-  "crush",
-  "hpf",
-  "lpf",
-  "every",
-  "drop",
-  "random",
-  "count",
-  "gtp",
-  "ltp",
-  "gtep",
-  "ltep",
-  "match",
-  "group",
-  "outlet",
-]);
+const RESERVED_BINDING_NAMES = DSL_RESERVED_WORDS;
 
 function isValidBindingIdentifier(value) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);

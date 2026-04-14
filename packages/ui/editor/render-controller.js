@@ -33,6 +33,45 @@ import { clearDeletedSelection } from "./state.js";
 import { BUILT_IN_SIDEBAR_TABS, escapeHtml, getNodePulseWindowTicks } from "./utils.js";
 import { createPreviewRenderState, renderSvgMarkup, renderThumbLayerMarkup } from "../render/svg-layer.js";
 
+function getSelectedNodeCount(selection, groupSelection, snapshot) {
+  const existingNodeIds = new Set(snapshot.nodes.map((node) => node.id));
+  const selectedNodeIds = Array.isArray(groupSelection?.nodeIds)
+    ? groupSelection.nodeIds.filter((nodeId) => existingNodeIds.has(nodeId))
+    : [];
+
+  if (selectedNodeIds.length > 0) {
+    return selectedNodeIds.length;
+  }
+
+  if (selection.kind === "node" && existingNodeIds.has(selection.nodeId)) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function getDeleteToolbarLabel(selection, groupSelection, snapshot) {
+  const selectedNodeCount = getSelectedNodeCount(selection, groupSelection, snapshot);
+
+  if (selectedNodeCount > 1) {
+    return "Delete Nodes";
+  }
+
+  if (selectedNodeCount === 1) {
+    return "Delete Node";
+  }
+
+  if (selection.kind === "corner") {
+    return "Delete Bend";
+  }
+
+  if (selection.kind === "edge") {
+    return "Delete Cable";
+  }
+
+  return "Delete";
+}
+
 export function createRenderController({
   state,
   markViewportDirty,
@@ -117,7 +156,8 @@ export function createRenderController({
     const cursor = getViewportCursor();
     const hasDeletableSelection = selection.kind !== "none" || state.groupSelection.nodeIds.length > 0;
     const hasRotatableSelection = selection.kind === "node";
-    const showTouchCancelCable = state.drag.kind === "edge-create";
+    const deleteToolbarLabel = getDeleteToolbarLabel(selection, state.groupSelection, state.snapshot);
+    const showCancelCableButton = state.drag.kind === "edge-create";
 
     state.root.innerHTML = `
       ${createStyles(state.config)}
@@ -155,7 +195,7 @@ export function createRenderController({
             </div>
             <div class="ping-editor__toolbar-group">
               ${
-                showTouchCancelCable
+                showCancelCableButton
                   ? `
                     <button
                       class="ping-editor__panel-button ping-editor__toolbar-cancel-cable-button"
@@ -193,11 +233,11 @@ export function createRenderController({
                 type="button"
                 data-action="delete-selection"
                 data-testid="delete-toolbar-button"
-                aria-label="Delete"
-                title="Delete"
+                aria-label="${escapeHtml(deleteToolbarLabel)}"
+                title="${escapeHtml(deleteToolbarLabel)}"
                 ${hasDeletableSelection ? "" : "disabled"}
               >
-                ${renderToolbarButtonContent("Delete", FaRegTrashCan)}
+                ${renderToolbarButtonContent(deleteToolbarLabel, FaRegTrashCan)}
               </button>
               <button
                 class="ping-editor__panel-button ping-editor__toolbar-rotate-button"
@@ -521,8 +561,10 @@ export function createRenderController({
       ) ??
       state.runtime?.getNodePulseState?.(currentTick, getNodePulseWindowTicks(state.tempo)) ??
       [];
+    const previousThumbs = state.thumbs;
+    const thumbsChanged = JSON.stringify(nextThumbs) !== JSON.stringify(previousThumbs);
 
-    if (JSON.stringify(nextThumbs) !== JSON.stringify(state.thumbs)) {
+    if (thumbsChanged) {
       state.thumbs = nextThumbs;
       if (!state.dirty) {
         state.thumbOnlyDirty = true;

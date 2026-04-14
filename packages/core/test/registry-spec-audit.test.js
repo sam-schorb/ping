@@ -156,6 +156,14 @@ const EXPECTED_NODE_SPEC = Object.freeze({
     hasParam: true,
     defaultParam: 8,
   },
+  step: {
+    layout: "single-io-control",
+    inputs: 1,
+    outputs: 1,
+    controlPorts: 1,
+    hasParam: true,
+    defaultParam: 1,
+  },
   gtp: {
     layout: "single-io-control",
     inputs: 1,

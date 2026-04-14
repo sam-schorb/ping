@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   createDefaultSampleSlots,
   DEFAULT_TEMPO_BPM,
+  getOrthogonalRouteDistanceAtPoint,
   getPortAnchor,
   routeGraph,
 } from "@ping/core";
@@ -29,6 +30,7 @@ export {
   assert,
   createDefaultSampleSlots,
   DEFAULT_TEMPO_BPM,
+  getOrthogonalRouteDistanceAtPoint,
   getPortAnchor,
   routeGraph,
   buildObstacleAwarePreviewRoute,

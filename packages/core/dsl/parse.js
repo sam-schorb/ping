@@ -2,35 +2,7 @@ import {
   DSL_ERROR_CODES,
   createDslIssue,
 } from "./errors.js";
-
-export const DSL_RESERVED_WORDS = new Set([
-  "pulse",
-  "out",
-  "mux",
-  "demux",
-  "switch",
-  "block",
-  "add",
-  "sub",
-  "set",
-  "speed",
-  "pitch",
-  "decay",
-  "crush",
-  "hpf",
-  "lpf",
-  "every",
-  "drop",
-  "random",
-  "count",
-  "gtp",
-  "ltp",
-  "gtep",
-  "ltep",
-  "match",
-  "group",
-  "outlet",
-]);
+import { DSL_RESERVED_WORDS } from "./constants.js";
 
 function isIdentifierStart(char) {
   return /[A-Za-z_]/.test(char);

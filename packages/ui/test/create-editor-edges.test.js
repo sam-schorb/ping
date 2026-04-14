@@ -74,6 +74,186 @@ test("editor supports drag-based cable creation with manual corners", async () =
   }
 });
 
+test("editor collapses duplicate temporary cable corners before committing the edge", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const outputPort = harness.query("port-node-a-out-0");
+    const outputPoint = getPortScreenPoint(outputPort);
+    harness.pointerDown(outputPort, { clientX: outputPoint.x, clientY: outputPoint.y });
+    harness.pointerMove(harness.query("editor-viewport"), { clientX: 180, clientY: 120 });
+    harness.pointerUp({ clientX: 180, clientY: 120 });
+    await harness.flush();
+
+    let viewport = harness.query("editor-viewport");
+    harness.pointerDown(viewport, { clientX: 180, clientY: 120 });
+    harness.pointerUp({ clientX: 180, clientY: 120 });
+    harness.click(viewport, { clientX: 180, clientY: 120 });
+    await harness.flush();
+
+    viewport = harness.query("editor-viewport");
+    harness.pointerDown(viewport, { clientX: 180, clientY: 120 });
+    harness.pointerUp({ clientX: 180, clientY: 120 });
+    harness.click(viewport, { clientX: 180, clientY: 120 });
+    await harness.flush();
+
+    const inputPort = harness.query("port-node-b-in-0");
+    const inputPoint = getPortScreenPoint(inputPort);
+    harness.pointerDown(inputPort, { clientX: inputPoint.x, clientY: inputPoint.y });
+    harness.pointerUp({ clientX: inputPoint.x, clientY: inputPoint.y });
+    harness.click(inputPort, { clientX: inputPoint.x, clientY: inputPoint.y });
+    await harness.flush();
+
+    assert.equal(harness.snapshot.edges.length, 1);
+    assert.deepEqual(harness.snapshot.edges[0].manualCorners, [{ x: 8, y: 5 }]);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("double-clicking a selected edge inserts a bend after hidden collinear corners", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 12, y: 0 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-a",
+            from: { nodeId: "node-a", portSlot: 0 },
+            to: { nodeId: "node-b", portSlot: 0 },
+            manualCorners: [{ x: 6, y: 1 }],
+          },
+        ],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const insertScreenPoint = worldToScreen(
+      { x: 8, y: 1 },
+      { x: 0, y: 0, scale: 1 },
+      DEFAULT_UI_CONFIG,
+    );
+
+    harness.click(harness.query("edge-edge-a").querySelector(".ping-editor__edge-hit"), {
+      clientX: insertScreenPoint.x,
+      clientY: insertScreenPoint.y,
+    });
+    await harness.flush();
+
+    assert.deepEqual(harness.selection, { kind: "edge", edgeId: "edge-a" });
+
+    const refreshedEdgeHit = harness.query("edge-edge-a").querySelector(".ping-editor__edge-hit");
+    harness.doubleClick(refreshedEdgeHit, {
+      clientX: insertScreenPoint.x,
+      clientY: insertScreenPoint.y,
+    });
+    await harness.flush();
+
+    assert.deepEqual(harness.snapshot.edges[0].manualCorners, [
+      { x: 6, y: 1 },
+      { x: 8, y: 1 },
+    ]);
+    assert.ok(harness.query("corner-edge-a-1"));
+    assert.match(
+      harness.query("corner-handle-edge-a-1").getAttribute("class"),
+      /\bis-visible\b/,
+    );
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("selected edge insertion on second click does not duplicate on the following dblclick event", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 0, y: 0 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 12, y: 0 }, rot: 0, params: {} },
+        ],
+        edges: [
+          {
+            id: "edge-a",
+            from: { nodeId: "node-a", portSlot: 0 },
+            to: { nodeId: "node-b", portSlot: 0 },
+            manualCorners: [{ x: 6, y: 1 }],
+          },
+        ],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const insertScreenPoint = worldToScreen(
+      { x: 8, y: 1 },
+      { x: 0, y: 0, scale: 1 },
+      DEFAULT_UI_CONFIG,
+    );
+
+    let edgeHit = harness.query("edge-edge-a").querySelector(".ping-editor__edge-hit");
+    harness.click(edgeHit, {
+      clientX: insertScreenPoint.x,
+      clientY: insertScreenPoint.y,
+    });
+    await harness.flush();
+
+    assert.deepEqual(harness.selection, { kind: "edge", edgeId: "edge-a" });
+
+    edgeHit = harness.query("edge-edge-a").querySelector(".ping-editor__edge-hit");
+    harness.click(edgeHit, {
+      clientX: insertScreenPoint.x,
+      clientY: insertScreenPoint.y,
+      detail: 2,
+    });
+    await harness.flush();
+
+    assert.deepEqual(harness.snapshot.edges[0].manualCorners, [
+      { x: 6, y: 1 },
+      { x: 8, y: 1 },
+    ]);
+
+    edgeHit = harness.query("edge-edge-a").querySelector(".ping-editor__edge-hit");
+    harness.doubleClick(edgeHit, {
+      clientX: insertScreenPoint.x,
+      clientY: insertScreenPoint.y,
+    });
+    await harness.flush();
+
+    assert.deepEqual(harness.snapshot.edges[0].manualCorners, [
+      { x: 6, y: 1 },
+      { x: 8, y: 1 },
+    ]);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("editor does not pan the canvas while an edge preview is active", async () => {
   const dom = setupDom();
 
@@ -139,6 +319,254 @@ test("editor completes an active edge preview when the target port is clicked", 
     assert.ok(createdEdge);
     assert.deepEqual(createdEdge.from, { nodeId: "node-1", portSlot: 0 });
     assert.deepEqual(createdEdge.to, { nodeId: "node-2", portSlot: 0 });
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("editor escape cancels an active edge preview", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const viewport = harness.query("editor-viewport");
+    const outputPort = harness.query("port-node-a-out-0");
+    const outputPoint = getPortScreenPoint(outputPort);
+    harness.pointerDown(outputPort, { clientX: outputPoint.x, clientY: outputPoint.y });
+    harness.pointerMove(viewport, { clientX: 180, clientY: 120 });
+    harness.pointerUp({ clientX: 180, clientY: 120 });
+    await harness.flush();
+
+    assert.ok(harness.query("edge-preview"));
+
+    dispatchKeydown(dom.window, harness.container, "Escape");
+    await harness.flush();
+
+    assert.equal(harness.query("edge-preview"), null);
+    assert.equal(harness.snapshot.edges.length, 0);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("editor backspace removes the last temporary cable corner before commit", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const viewport = harness.query("editor-viewport");
+    const outputPort = harness.query("port-node-a-out-0");
+    const outputPoint = getPortScreenPoint(outputPort);
+    harness.pointerDown(outputPort, { clientX: outputPoint.x, clientY: outputPoint.y });
+    harness.pointerMove(viewport, { clientX: 180, clientY: 120 });
+    harness.pointerUp({ clientX: 180, clientY: 120 });
+    await harness.flush();
+
+    const refreshedViewport = harness.query("editor-viewport");
+    harness.pointerDown(refreshedViewport, { clientX: 180, clientY: 120 });
+    harness.pointerUp({ clientX: 180, clientY: 120 });
+    harness.click(refreshedViewport, { clientX: 180, clientY: 120 });
+    await harness.flush();
+
+    const updatedViewport = harness.query("editor-viewport");
+    harness.pointerDown(updatedViewport, { clientX: 240, clientY: 160 });
+    harness.pointerUp({ clientX: 240, clientY: 160 });
+    harness.click(updatedViewport, { clientX: 240, clientY: 160 });
+    await harness.flush();
+
+    dispatchKeydown(dom.window, harness.container, "Backspace");
+    await harness.flush();
+
+    const inputPort = harness.query("port-node-b-in-0");
+    const inputPoint = getPortScreenPoint(inputPort);
+    harness.pointerDown(inputPort, { clientX: inputPoint.x, clientY: inputPoint.y });
+    harness.pointerUp({ clientX: inputPoint.x, clientY: inputPoint.y });
+    harness.click(inputPort, { clientX: inputPoint.x, clientY: inputPoint.y });
+    await harness.flush();
+
+    assert.equal(harness.snapshot.edges.length, 1);
+    assert.deepEqual(harness.snapshot.edges[0].manualCorners, [{ x: 8, y: 5 }]);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("editor delete cancels an active edge preview when no temporary corners remain", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const viewport = harness.query("editor-viewport");
+    const outputPort = harness.query("port-node-a-out-0");
+    const outputPoint = getPortScreenPoint(outputPort);
+    harness.pointerDown(outputPort, { clientX: outputPoint.x, clientY: outputPoint.y });
+    harness.pointerMove(viewport, { clientX: 180, clientY: 120 });
+    harness.pointerUp({ clientX: 180, clientY: 120 });
+    await harness.flush();
+
+    assert.ok(harness.query("edge-preview"));
+
+    dispatchKeydown(dom.window, harness.container, "Delete");
+    await harness.flush();
+
+    assert.equal(harness.query("edge-preview"), null);
+    assert.equal(harness.snapshot.edges.length, 0);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("clicking the active source port cancels an edge preview", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "out", pos: { x: 8, y: 2 }, rot: 0, params: {} },
+        ],
+        edges: [],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const viewport = harness.query("editor-viewport");
+    const outputPort = harness.query("port-node-a-out-0");
+    const outputPoint = getPortScreenPoint(outputPort);
+    harness.pointerDown(outputPort, { clientX: outputPoint.x, clientY: outputPoint.y });
+    harness.pointerMove(viewport, { clientX: 180, clientY: 120 });
+    harness.pointerUp({ clientX: 180, clientY: 120 });
+    await harness.flush();
+
+    assert.ok(harness.query("edge-preview"));
+
+    const refreshedOutputPort = harness.query("port-node-a-out-0");
+    const refreshedOutputPoint = getPortScreenPoint(refreshedOutputPort);
+    harness.pointerDown(refreshedOutputPort, {
+      clientX: refreshedOutputPoint.x,
+      clientY: refreshedOutputPoint.y,
+    });
+    harness.pointerUp({ clientX: refreshedOutputPoint.x, clientY: refreshedOutputPoint.y });
+    harness.click(refreshedOutputPort, {
+      clientX: refreshedOutputPoint.x,
+      clientY: refreshedOutputPoint.y,
+    });
+    await harness.flush();
+
+    assert.equal(harness.query("edge-preview"), null);
+    assert.equal(harness.snapshot.edges.length, 0);
+    assert.deepEqual(harness.selection, { kind: "none" });
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("clicking another same-direction source restarts edge creation from that port", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          { id: "node-a", type: "pulse", pos: { x: 2, y: 2 }, rot: 0, params: { param: 1 } },
+          { id: "node-b", type: "pulse", pos: { x: 2, y: 6 }, rot: 0, params: { param: 1 } },
+          { id: "node-out", type: "out", pos: { x: 10, y: 4 }, rot: 0, params: {} },
+        ],
+        edges: [],
+        groups: {},
+      },
+    });
+    await harness.flush();
+
+    const viewport = harness.query("editor-viewport");
+    const firstSourcePort = harness.query("port-node-a-out-0");
+    const secondSourcePort = harness.query("port-node-b-out-0");
+    const inputPort = harness.query("port-node-out-in-0");
+    const firstSourcePoint = getPortScreenPoint(firstSourcePort);
+    const secondSourcePoint = getPortScreenPoint(secondSourcePort);
+    const inputPoint = getPortScreenPoint(inputPort);
+
+    harness.pointerDown(firstSourcePort, { clientX: firstSourcePoint.x, clientY: firstSourcePoint.y });
+    harness.pointerMove(viewport, { clientX: 180, clientY: 120 });
+    harness.pointerUp({ clientX: 180, clientY: 120 });
+    await harness.flush();
+
+    assert.ok(harness.query("edge-preview"));
+
+    const refreshedSecondSourcePort = harness.query("port-node-b-out-0");
+    const refreshedSecondSourcePoint = getPortScreenPoint(refreshedSecondSourcePort);
+    harness.pointerDown(refreshedSecondSourcePort, {
+      clientX: refreshedSecondSourcePoint.x,
+      clientY: refreshedSecondSourcePoint.y,
+    });
+    harness.pointerUp({ clientX: refreshedSecondSourcePoint.x, clientY: refreshedSecondSourcePoint.y });
+    harness.click(refreshedSecondSourcePort, {
+      clientX: refreshedSecondSourcePoint.x,
+      clientY: refreshedSecondSourcePoint.y,
+    });
+    await harness.flush();
+
+    const refreshedInputPort = harness.query("port-node-out-in-0");
+    const refreshedInputPoint = getPortScreenPoint(refreshedInputPort);
+    harness.pointerDown(refreshedInputPort, {
+      clientX: refreshedInputPoint.x,
+      clientY: refreshedInputPoint.y,
+    });
+    harness.pointerUp({ clientX: refreshedInputPoint.x, clientY: refreshedInputPoint.y });
+    harness.click(refreshedInputPort, {
+      clientX: refreshedInputPoint.x,
+      clientY: refreshedInputPoint.y,
+    });
+    await harness.flush();
+
+    assert.equal(harness.snapshot.edges.length, 1);
+    assert.deepEqual(harness.snapshot.edges[0].from, { nodeId: "node-b", portSlot: 0 });
+    assert.deepEqual(harness.snapshot.edges[0].to, { nodeId: "node-out", portSlot: 0 });
 
     harness.unmount();
   } finally {
@@ -610,4 +1038,3 @@ test("diagnostic focus selects the target without recentering the camera", async
     dom.cleanup();
   }
 });
-

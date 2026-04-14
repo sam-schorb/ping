@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { JSDOM } from "jsdom";
 
-import { routeEdge, routeGraph } from "@ping/core";
+import { getOrthogonalRouteDistanceAtPoint, routeEdge, routeGraph } from "@ping/core";
 
 import {
   DEFAULT_UI_CONFIG,
@@ -121,6 +121,73 @@ function createMultiEdgeSnapshot() {
         from: { nodeId: "node-b-in", portSlot: 0 },
         to: { nodeId: "node-b-out", portSlot: 0 },
         manualCorners: [],
+      },
+    ],
+    groups: {},
+  };
+}
+
+function createCornerPreviewSnapshot(manualCorner = { x: 6, y: 2 }) {
+  return {
+    nodes: [
+      {
+        id: "node-pulse",
+        type: "pulse",
+        pos: { x: 0, y: 0 },
+        rot: 0,
+        params: {},
+      },
+      {
+        id: "node-output",
+        type: "out",
+        pos: { x: 12, y: 0 },
+        rot: 0,
+        params: {},
+      },
+    ],
+    edges: [
+      {
+        id: "edge-a",
+        from: { nodeId: "node-pulse", portSlot: 0 },
+        to: { nodeId: "node-output", portSlot: 0 },
+        manualCorners: [manualCorner],
+      },
+    ],
+    groups: {},
+  };
+}
+
+function createBlockedCornerPreviewSnapshot(manualCorner = { x: 6, y: 2 }) {
+  return {
+    nodes: [
+      {
+        id: "node-pulse",
+        type: "pulse",
+        pos: { x: 2, y: 2 },
+        rot: 0,
+        params: { param: 1 },
+      },
+      {
+        id: "node-blocker",
+        type: "set",
+        pos: { x: 8, y: 2 },
+        rot: 0,
+        params: { param: 3 },
+      },
+      {
+        id: "node-output",
+        type: "out",
+        pos: { x: 14, y: 2 },
+        rot: 0,
+        params: {},
+      },
+    ],
+    edges: [
+      {
+        id: "edge-a",
+        from: { nodeId: "node-pulse", portSlot: 0 },
+        to: { nodeId: "node-output", portSlot: 0 },
+        manualCorners: [manualCorner],
       },
     ],
     groups: {},
@@ -280,6 +347,135 @@ test("createPreviewRenderState hides thumbs on every preview-rerouted edge", () 
 
   assert.deepEqual([...previewRenderState.previewEdgeRoutes.keys()], ["edge-a"]);
   assert.deepEqual([...previewRenderState.hiddenThumbEdgeIds], ["edge-a"]);
+});
+
+test("createPreviewRenderState reroutes the dragged corner edge from the snapped live point", () => {
+  const snapshot = createCornerPreviewSnapshot();
+  const routes = routeGraph(snapshot, TEST_REGISTRY);
+  const previewState = {
+    drag: {
+      kind: "corner",
+      edgeId: "edge-a",
+      cornerIndex: 0,
+      startPoint: { x: 6, y: 2 },
+      currentPoint: { x: 8.4, y: 5.6 },
+    },
+    nodePositionOverrides: new Map(),
+  };
+  const expectedSnapshot = createCornerPreviewSnapshot({ x: 8, y: 6 });
+  const expectedRoute = routeEdge("edge-a", expectedSnapshot, TEST_REGISTRY);
+
+  const previewRenderState = createPreviewRenderState(
+    snapshot,
+    routes,
+    TEST_REGISTRY,
+    previewState,
+    DEFAULT_UI_CONFIG,
+  );
+
+  assert.deepEqual(
+    previewRenderState.previewSnapshot.edges.find((edge) => edge.id === "edge-a")?.manualCorners,
+    [{ x: 8, y: 6 }],
+  );
+  assert.deepEqual(previewRenderState.previewEdgeRoutes.get("edge-a"), expectedRoute);
+  assert.deepEqual([...previewRenderState.hiddenThumbEdgeIds], ["edge-a"]);
+});
+
+test("renderSvgMarkup places the dragged corner handle at the snapped preview position", () => {
+  const snapshot = createCornerPreviewSnapshot();
+  const routes = routeGraph(snapshot, TEST_REGISTRY);
+  const args = createBaseRenderArgs(snapshot, routes);
+  const previewState = {
+    kind: "corner",
+    edgeId: "edge-a",
+    cornerIndex: 0,
+    startPoint: { x: 6, y: 2 },
+    currentPoint: { x: 8.4, y: 5.6 },
+  };
+  const expectedSnapshot = createCornerPreviewSnapshot({ x: 8, y: 6 });
+  const expectedRoute = routeEdge("edge-a", expectedSnapshot, TEST_REGISTRY);
+  const expectedPoint = worldToScreen({ x: 8, y: 6 }, args.camera, args.config);
+  const markup = renderSvgMarkup({
+    ...args,
+    drag: previewState,
+  });
+  const dom = new JSDOM(`<div id="root">${markup}</div>`);
+  const handle = dom.window.document.querySelector('[data-testid="corner-handle-edge-a-0"]');
+
+  assert.equal(getEdgePathD(markup), toScreenPath(expectedRoute, args.camera, args.config));
+  assert.equal(Number(handle.getAttribute("cx")), expectedPoint.x);
+  assert.equal(Number(handle.getAttribute("cy")), expectedPoint.y);
+});
+
+test("createPreviewRenderState clamps impossible corner drags to legal routed geometry", () => {
+  const snapshot = createBlockedCornerPreviewSnapshot();
+  const routes = routeGraph(snapshot, TEST_REGISTRY);
+  const previewState = {
+    drag: {
+      kind: "corner",
+      edgeId: "edge-a",
+      cornerIndex: 0,
+      startPoint: { x: 6, y: 2 },
+      currentPoint: { x: 9, y: 3 },
+    },
+    nodePositionOverrides: new Map(),
+  };
+
+  const previewRenderState = createPreviewRenderState(
+    snapshot,
+    routes,
+    TEST_REGISTRY,
+    previewState,
+    DEFAULT_UI_CONFIG,
+  );
+  const resolvedCorner = previewRenderState.previewSnapshot.edges.find((edge) => edge.id === "edge-a")
+    ?.manualCorners?.[0];
+  const resolvedRoute = previewRenderState.previewEdgeRoutes.get("edge-a");
+
+  assert.notDeepEqual(resolvedCorner, { x: 9, y: 3 });
+  assert.notEqual(getOrthogonalRouteDistanceAtPoint(resolvedRoute.points, resolvedCorner), null);
+});
+
+test("renderSvgMarkup keeps the dragged corner handle on the rendered route when the desired point is illegal", () => {
+  const snapshot = createBlockedCornerPreviewSnapshot();
+  const routes = routeGraph(snapshot, TEST_REGISTRY);
+  const args = createBaseRenderArgs(snapshot, routes);
+  const markup = renderSvgMarkup({
+    ...args,
+    drag: {
+      kind: "corner",
+      edgeId: "edge-a",
+      cornerIndex: 0,
+      startPoint: { x: 6, y: 2 },
+      currentPoint: { x: 9, y: 3 },
+    },
+  });
+  const dom = new JSDOM(`<div id="root">${markup}</div>`);
+  const handle = dom.window.document.querySelector('[data-testid="corner-handle-edge-a-0"]');
+  const handleWorldPoint = {
+    x: Number(handle.getAttribute("cx")) / DEFAULT_UI_CONFIG.grid.GRID_PX,
+    y: Number(handle.getAttribute("cy")) / DEFAULT_UI_CONFIG.grid.GRID_PX,
+  };
+  const previewRenderState = createPreviewRenderState(
+    snapshot,
+    routes,
+    TEST_REGISTRY,
+    {
+      drag: {
+        kind: "corner",
+        edgeId: "edge-a",
+        cornerIndex: 0,
+        startPoint: { x: 6, y: 2 },
+        currentPoint: { x: 9, y: 3 },
+      },
+      nodePositionOverrides: new Map(),
+    },
+    DEFAULT_UI_CONFIG,
+  );
+  const previewRoute = previewRenderState.previewEdgeRoutes.get("edge-a");
+
+  assert.notEqual(getEdgePathD(markup), "");
+  assert.notEqual(getOrthogonalRouteDistanceAtPoint(previewRoute.points, handleWorldPoint), null);
 });
 
 test("renderSvgMarkup hides thumbs on unrelated edges when they are preview-rerouted", () => {

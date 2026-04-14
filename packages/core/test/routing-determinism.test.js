@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { getLayout, getNodeDefinition, routeEdge, routeGraph } from "../src/index.js";
+import {
+  getLayout,
+  getNodeDefinition,
+  getOrthogonalRouteDistanceAtPoint,
+  routeEdge,
+  routeGraph,
+} from "../src/index.js";
 import { loadRoutingFixture } from "./helpers/routing-fixtures.js";
 
 const registry = {
@@ -61,4 +67,24 @@ test("routeEdge keeps manual corners as hard constraints in order", async () => 
   ]);
   assert.equal(route.svgPathD, "M 3 1 L 5 1 L 5 5 L 6 5");
   assert.equal(route.totalLength, 7);
+});
+
+test("route distance helper resolves hidden collinear waypoints in order", () => {
+  const points = [
+    { x: 3, y: 1 },
+    { x: 9, y: 1 },
+  ];
+
+  assert.deepEqual(getOrthogonalRouteDistanceAtPoint(points, { x: 5, y: 1 }), {
+    distance: 2,
+    segmentIndex: 0,
+  });
+  assert.deepEqual(
+    getOrthogonalRouteDistanceAtPoint(points, { x: 7, y: 1 }, { minimumDistance: 2 }),
+    {
+      distance: 4,
+      segmentIndex: 0,
+    },
+  );
+  assert.equal(getOrthogonalRouteDistanceAtPoint(points, { x: 7, y: 2 }), null);
 });

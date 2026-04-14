@@ -25,6 +25,8 @@ import {
   getAudibleLatencySec,
   getClockTimeSec,
   getPresentationClockTimeSec,
+  getTransportClockTimeSec,
+  rebaseTransportAtCurrentTick,
   tickFromTransport,
 } from "./presentation-clock.mjs";
 
@@ -395,7 +397,11 @@ export function Ping() {
     traceAudio("syncAudioSessionTransport:stop-no-transport");
   }
 
-  function resetTransportClock(nextBpm, nextTick = 0, originTimeSec = getClockTimeSec()) {
+  function getSharedTransportClockTimeSec(fallbackNowMs = null) {
+    return getTransportClockTimeSec(audioContextRef.current, fallbackNowMs);
+  }
+
+  function resetTransportClock(nextBpm, nextTick = 0, originTimeSec = getSharedTransportClockTimeSec()) {
     transportRef.current = {
       originTimeSec,
       originTick: nextTick,
@@ -406,7 +412,7 @@ export function Ping() {
 
   resetTransportClockRef.current = resetTransportClock;
 
-  function getNowTick(nowTimeSec = getClockTimeSec()) {
+  function getNowTick(nowTimeSec = getSharedTransportClockTimeSec()) {
     return tickFromTransport(transportRef.current, nowTimeSec);
   }
 
@@ -616,16 +622,23 @@ export function Ping() {
     }
 
     if (output.type === "audio/updateTempo") {
-      const nowTick = getNowTick();
       const nextBpm = output.payload.bpm;
+      const nowTimeSec = getSharedTransportClockTimeSec();
+      const nextTransport = rebaseTransportAtCurrentTick(
+        transportRef.current,
+        nextBpm,
+        nowTimeSec,
+      );
       traceAudio("handleEditorOutput:updateTempo", {
         previousTempo: tempoRef.current,
         nextBpm,
-        nowTick,
+        nowTick: nextTransport.originTick,
+        nowTimeSec,
       });
       setTempo(nextBpm);
       tempoRef.current = nextBpm;
-      resetTransportClock(nextBpm, nowTick);
+      transportRef.current = nextTransport;
+      syncAudioSessionTransport();
       return;
     }
 

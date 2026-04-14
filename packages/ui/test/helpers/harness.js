@@ -364,6 +364,22 @@ export function createEditorHarness(options = {}) {
           shiftKey: options.shiftKey ?? false,
           ctrlKey: options.ctrlKey ?? false,
           metaKey: options.metaKey ?? false,
+          detail: options.detail ?? 1,
+        }),
+      );
+    },
+    doubleClick(element, options = {}) {
+      element.dispatchEvent(
+        new window.MouseEvent("dblclick", {
+          bubbles: true,
+          cancelable: true,
+          button: options.button ?? 0,
+          clientX: options.clientX ?? 0,
+          clientY: options.clientY ?? 0,
+          shiftKey: options.shiftKey ?? false,
+          ctrlKey: options.ctrlKey ?? false,
+          metaKey: options.metaKey ?? false,
+          detail: 2,
         }),
       );
     },
