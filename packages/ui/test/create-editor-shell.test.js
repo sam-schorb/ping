@@ -502,7 +502,11 @@ test("editor orders the built-in sidebar tabs and uses compact history controls"
     const tabIds = [...harness.container.querySelectorAll(".ping-editor__tabs [data-tab]")]
       .map((tab) => tab.getAttribute("data-tab"));
 
-    assert.deepEqual(tabIds.slice(0, 4), ["docs", "console", "groups", "samples"]);
+    assert.deepEqual(tabIds.slice(0, 5), ["docs", "code", "console", "groups", "samples"]);
+    assert.equal(
+      harness.container.querySelector('[data-tab="code"] .ping-editor__tab-label')?.textContent.trim(),
+      "code",
+    );
     assert.equal(harness.query("undo-button").getAttribute("aria-label"), "Undo");
     assert.equal(harness.query("redo-button").getAttribute("aria-label"), "Redo");
     assert.ok(harness.query("undo-button").querySelector(".ping-editor__toolbar-button-icon svg"));
@@ -840,6 +844,115 @@ test("docs tab renders alphabetical categories, sorted entries, and jump tags", 
   }
 });
 
+test("code tab renders the DSL guide as clean section cards with code examples", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness();
+    await harness.flush();
+
+    harness.click(harness.container.querySelector('[data-tab="code"]'));
+    await harness.flush();
+
+    assert.ok(harness.query("code-panel"));
+    assert.equal(harness.query("code-panel").querySelector(".ping-editor__code-panel-title"), null);
+
+    const tagLabels = [...harness.query("code-tag-bank").querySelectorAll(".ping-editor__code-tag")].map(
+      (element) => element.textContent.trim(),
+    );
+    assert.deepEqual(tagLabels, [
+      "all",
+      "overview",
+      "inputs",
+      "calls",
+      "chains",
+      "bindings",
+      "mux",
+      "demux",
+      "outputs",
+    ]);
+
+    const sectionIds = [...harness.container.querySelectorAll("[data-docs-category-id]")].map((element) =>
+      element.getAttribute("data-docs-category-id"),
+    );
+    assert.deepEqual(sectionIds, [
+      "overview",
+      "inputs",
+      "calls",
+      "chains",
+      "bindings",
+      "mux",
+      "demux",
+      "outputs",
+    ]);
+
+    assert.equal(
+      harness.query("code-section-overview").querySelector(".ping-editor__code-section-title")?.textContent.trim(),
+      "Start",
+    );
+    assert.equal(
+      harness.query("code-example-overview-0").querySelector(".ping-editor__code-example-label")?.textContent.trim(),
+      "Simple chain",
+    );
+    assert.match(
+      harness.query("code-example-overview-0").querySelector(".ping-editor__code-block")?.textContent ?? "",
+      /\$0\.every\(2\)\.count\(4\)\.outlet\(0\)/,
+    );
+    assert.match(
+      harness.query("code-section-mux").textContent,
+      /six indexed outputs/i,
+    );
+    assert.match(
+      harness.query("code-example-demux-0").querySelector(".ping-editor__code-block")?.textContent ?? "",
+      /\$0\.d\[0\]/,
+    );
+    assert.equal(harness.container.querySelector(".ping-editor__code-section-chip"), null);
+
+    const panelScroll = harness.container.querySelector(".ping-editor__panel-scroll");
+    const demuxSection = harness.query("code-section-demux");
+    let lastScrollTo = null;
+    panelScroll.scrollTop = 18;
+    panelScroll.scrollTo = (options) => {
+      lastScrollTo = options;
+      panelScroll.scrollTop = options.top;
+    };
+    panelScroll.getBoundingClientRect = () => ({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      width: 320,
+      height: 480,
+      right: 320,
+      bottom: 480,
+    });
+    demuxSection.getBoundingClientRect = () => ({
+      x: 0,
+      y: 210,
+      left: 0,
+      top: 210,
+      width: 320,
+      height: 120,
+      right: 320,
+      bottom: 330,
+    });
+
+    harness.click(harness.query("code-tag-demux"));
+    await harness.flush();
+    assert.equal(panelScroll.scrollTop, 220);
+    assert.deepEqual(lastScrollTo, { top: 220, behavior: "auto" });
+
+    harness.click(harness.query("code-tag-all"));
+    await harness.flush();
+    assert.equal(panelScroll.scrollTop, 0);
+    assert.deepEqual(lastScrollTo, { top: 0, behavior: "auto" });
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
 test("sidebar docs interactions do not leak into canvas selection or marquee state", async () => {
   const dom = setupDom();
 
@@ -946,7 +1059,7 @@ test("editor sidebar collapses into a toggle bar and restores the active tab", a
     assert.ok(harness.query("sidebar-toggle").querySelector(".ping-editor__sidebar-toggle-icon--mobile svg"));
     assert.match(
       harness.container.querySelector(".ping-editor__toolbar").getAttribute("style") ?? "",
-      /--ping-toolbar-sidebar-clearance:\s*calc\(min\(320px,\s*48vw,\s*560px\)\s*\+\s*32px\)/,
+      /--ping-toolbar-sidebar-clearance:\s*calc\(calc\(min\(320px,\s*48vw,\s*560px\)\s*\*\s*1\.2\)\s*\+\s*32px\)/,
     );
     const styles = harness.container.querySelector("[data-ping-editor-style]").textContent;
     assert.match(
@@ -991,7 +1104,7 @@ test("editor sidebar collapses into a toggle bar and restores the active tab", a
     assert.equal(harness.query("sidebar-toggle").getAttribute("aria-label"), "Close sidebar");
     assert.match(
       harness.container.querySelector(".ping-editor__toolbar").getAttribute("style") ?? "",
-      /--ping-toolbar-sidebar-clearance:\s*calc\(min\(320px,\s*48vw,\s*560px\)\s*\+\s*32px\)/,
+      /--ping-toolbar-sidebar-clearance:\s*calc\(calc\(min\(320px,\s*48vw,\s*560px\)\s*\*\s*1\.2\)\s*\+\s*32px\)/,
     );
     assert.equal(
       harness.container.querySelector('[data-tab="docs"]').classList.contains("is-active"),

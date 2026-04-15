@@ -350,7 +350,7 @@ test("groups sidebar hides remove for in-use groups and opens the dialog clear o
     const styles = harness.container.querySelector("[data-ping-editor-style]").textContent;
     assert.match(
       styles,
-      /\.ping-editor__group-dialog\.is-sidebar-open\s*\{[\s\S]*right:\s*calc\(min\(320px,\s*48vw,\s*560px\)\s*\+\s*22px\);/,
+      /\.ping-editor__group-dialog\.is-sidebar-open\s*\{[\s\S]*right:\s*calc\(calc\(min\(320px,\s*48vw,\s*560px\)\s*\*\s*1\.2\)\s*\+\s*22px\);/,
     );
     assert.match(styles, /\.ping-editor__group-header\s*\{[\s\S]*padding-top:\s*4px;/);
     assert.match(

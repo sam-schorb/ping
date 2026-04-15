@@ -45,7 +45,7 @@ export function renderSidebarToggleIconContent(collapsed) {
 }
 
 function getSidebarWidthCss(config) {
-  return `min(${Math.max(280, config.panel.widthPx - 16)}px, 48vw, 560px)`;
+  return `calc(min(${Math.max(280, config.panel.widthPx - 16)}px, 48vw, 560px) * 1.2)`;
 }
 
 export function getToolbarSidebarClearanceCss(config, sidebarCollapsed) {
@@ -844,6 +844,113 @@ export function createStyles(config) {
       }
       .ping-editor__docs-entry-copy strong {
         color: var(--ping-chrome-ink);
+      }
+      .ping-editor__code-panel {
+        gap: 18px;
+      }
+      .ping-editor__code-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .ping-editor__code-tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 5px 10px;
+        border: 1px solid var(--ping-chrome-border);
+        border-radius: 12px;
+        background: var(--ping-chrome-card-strong);
+        color: var(--ping-chrome-ink);
+        font: inherit;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.15;
+        letter-spacing: 0.03em;
+        text-transform: lowercase;
+        cursor: pointer;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+        transition:
+          opacity 120ms ease,
+          box-shadow 140ms ease;
+      }
+      .ping-editor__code-tag:hover {
+        opacity: 0.8;
+      }
+      .ping-editor__code-tag.is-all {
+        border-color: var(--ping-chrome-border-strong);
+      }
+      .ping-editor__code-sections {
+        display: grid;
+        gap: 16px;
+      }
+      .ping-editor__code-section {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border-radius: 18px;
+        border: 1px solid var(--ping-chrome-border);
+        background: var(--ping-chrome-card);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+      }
+      .ping-editor__code-section-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--ping-chrome-ink-strong);
+      }
+      .ping-editor__code-copy {
+        display: grid;
+        gap: 8px;
+      }
+      .ping-editor__code-copy p {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--ping-chrome-ink-muted);
+      }
+      .ping-editor__code-list {
+        margin: 0;
+        padding-inline-start: 18px;
+        display: grid;
+        gap: 4px;
+        color: var(--ping-chrome-ink-muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .ping-editor__code-examples {
+        display: grid;
+        gap: 10px;
+      }
+      .ping-editor__code-example {
+        display: grid;
+        gap: 6px;
+      }
+      .ping-editor__code-example-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ping-chrome-ink-muted);
+      }
+      .ping-editor__code-block {
+        margin: 0;
+        padding: 11px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(95, 49, 39, 0.12);
+        background: linear-gradient(180deg, rgba(255, 251, 247, 0.98), rgba(248, 238, 230, 0.94));
+        color: var(--ping-chrome-ink-strong);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 11px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow-x: auto;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.35),
+          0 6px 16px rgba(115, 58, 45, 0.08);
+      }
+      .ping-editor__code-block code {
+        font: inherit;
       }
       .ping-editor__field {
         display: grid;

@@ -6,6 +6,7 @@ export const NODE_PULSE_DURATION_MS = 200;
 export const EDGE_CREATE_PREVIEW_EDGE_ID = "__edge-create-preview__";
 export const BUILT_IN_SIDEBAR_TABS = Object.freeze([
   { id: "docs", label: "docs" },
+  { id: "code", label: "code" },
   { id: "console", label: "console" },
   { id: "groups", label: "groups" },
   { id: "samples", label: "samples" },

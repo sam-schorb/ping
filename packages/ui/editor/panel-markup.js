@@ -1,3 +1,4 @@
+import { renderCodePanel } from "../panels/code.js";
 import { renderDiagnosticsPanel } from "../panels/diagnostics.js";
 import { renderDocsPanel } from "../panels/docs.js";
 import { renderGroupsPanel } from "../panels/groups.js";
@@ -26,6 +27,10 @@ export function buildPanelMarkup(state) {
       palette: state.palette,
       config: state.config,
     });
+  }
+
+  if (tab === "code") {
+    return renderCodePanel();
   }
 
   if (tab === "groups") {

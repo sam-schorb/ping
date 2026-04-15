@@ -593,9 +593,9 @@ test("editor reserves ctrl-wheel for zoom and keeps a full-width desktop viewpor
     assert.match(styles, /\.ping-editor\s*\{[\s\S]*position:\s*relative;[\s\S]*grid-template-rows:\s*minmax\(0,\s*1fr\);/);
     assert.match(styles, /\.ping-editor__layout\s*\{[\s\S]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/);
     assert.match(styles, /\.ping-editor__viewport-shell\s*\{[\s\S]*width:\s*100%;[\s\S]*height:\s*100%;/);
-    assert.match(styles, /\.ping-editor__sidebar\s*\{[\s\S]*min-width:\s*min\(320px,\s*48vw,\s*560px\);/);
-    assert.match(styles, /\.ping-editor__sidebar\s*\{[\s\S]*width:\s*min\(320px,\s*48vw,\s*560px\);/);
-    assert.match(styles, /\.ping-editor__sidebar\s*\{[\s\S]*max-width:\s*min\(320px,\s*48vw,\s*560px\);/);
+    assert.match(styles, /\.ping-editor__sidebar\s*\{[\s\S]*min-width:\s*calc\(min\(320px,\s*48vw,\s*560px\)\s*\*\s*1\.2\);/);
+    assert.match(styles, /\.ping-editor__sidebar\s*\{[\s\S]*width:\s*calc\(min\(320px,\s*48vw,\s*560px\)\s*\*\s*1\.2\);/);
+    assert.match(styles, /\.ping-editor__sidebar\s*\{[\s\S]*max-width:\s*calc\(min\(320px,\s*48vw,\s*560px\)\s*\*\s*1\.2\);/);
     assert.match(styles, /\.ping-editor__sample-button\s*\{[\s\S]*padding:\s*4px 8px;[\s\S]*font-size:\s*10px;/);
     assert.match(styles, /\.ping-editor__sample-file-input\s*\{[\s\S]*clip-path:\s*inset\(100%\);/);
     assert.doesNotMatch(styles, /\.ping-editor__sample-slot input\[type="file"\]\s*\{/);
