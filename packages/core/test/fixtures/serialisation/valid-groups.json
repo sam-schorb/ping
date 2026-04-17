@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "graph": {
+    "nodes": [
+      {
+        "id": "group-node",
+        "type": "group",
+        "pos": { "x": 2, "y": 2 },
+        "rot": 90,
+        "params": {},
+        "groupRef": "group-a"
+      }
+    ],
+    "edges": [],
+    "groups": {
+      "group-a": {
+        "id": "group-a",
+        "name": "Group A",
+        "graph": {
+          "nodes": [
+            {
+              "id": "inner-pulse",
+              "type": "pulse",
+              "pos": { "x": 0, "y": 0 },
+              "rot": 0,
+              "params": {}
+            },
+            {
+              "id": "inner-output",
+              "type": "out",
+              "pos": { "x": 4, "y": 0 },
+              "rot": 0,
+              "params": {}
+            }
+          ],
+          "edges": [
+            {
+              "id": "inner-edge",
+              "from": { "nodeId": "inner-pulse", "portSlot": 0 },
+              "to": { "nodeId": "inner-output", "portSlot": 0 },
+              "manualCorners": []
+            }
+          ]
+        },
+        "inputs": [
+          { "label": "in", "nodeId": "inner-output", "portSlot": 0 }
+        ],
+        "outputs": [
+          { "label": "out", "nodeId": "inner-pulse", "portSlot": 0 }
+        ],
+        "controls": [
+          { "label": "amount", "nodeId": "inner-pulse", "controlSlot": 0 }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "transport": {
+    "bpm": 60,
+    "ticksPerBeat": 1,
+    "originSec": 0
+  },
+  "config": {
+    "lookaheadSec": 0,
+    "horizonSec": 4
+  },
+  "clock": {
+    "t0": 0,
+    "t1": 0,
+    "latency": 0.05
+  },
+  "events": [
+    {
+      "tick": 2,
+      "value": 4
+    }
+  ],
+  "slots": [
+    { "id": "1", "path": "/samples/1.wav" },
+    { "id": "2", "path": "/samples/2.wav" },
+    { "id": "3", "path": "/samples/3.wav" },
+    { "id": "4", "path": "" },
+    { "id": "5", "path": "/samples/5.wav" },
+    { "id": "6", "path": "/samples/6.wav" },
+    { "id": "7", "path": "/samples/7.wav" },
+    { "id": "8", "path": "/samples/8.wav" }
+  ]
+}

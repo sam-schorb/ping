@@ -1,0 +1,12 @@
+{
+  "nodes": [
+    {
+      "id": "node-unknown",
+      "type": "does-not-exist",
+      "pos": { "x": 0, "y": 0 },
+      "rot": 0,
+      "params": {}
+    }
+  ],
+  "edges": []
+}

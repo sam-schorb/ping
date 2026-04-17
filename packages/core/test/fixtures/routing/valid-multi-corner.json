@@ -1,0 +1,29 @@
+{
+  "nodes": [
+    {
+      "id": "node-pulse",
+      "type": "pulse",
+      "pos": { "x": 0, "y": 0 },
+      "rot": 0,
+      "params": {}
+    },
+    {
+      "id": "node-output",
+      "type": "out",
+      "pos": { "x": 6, "y": 4 },
+      "rot": 0,
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-corner",
+      "from": { "nodeId": "node-pulse", "portSlot": 0 },
+      "to": { "nodeId": "node-output", "portSlot": 0 },
+      "manualCorners": [
+        { "x": 5, "y": 1 },
+        { "x": 5, "y": 5 }
+      ]
+    }
+  ]
+}

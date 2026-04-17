@@ -1,0 +1,16 @@
+[
+  {
+    "type": "fixture-layout-mismatch",
+    "label": "Fixture Layout Mismatch",
+    "description": "Uses the wrong output count for the chosen layout.",
+    "category": "Routing",
+    "icon": "mux",
+    "color": "#577590",
+    "layout": "multi-out-6",
+    "inputs": 1,
+    "outputs": 5,
+    "controlPorts": 0,
+    "hasParam": false,
+    "defaultParam": 1
+  }
+]

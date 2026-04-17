@@ -1,0 +1,12 @@
+{
+  "nodes": [
+    {
+      "id": "node-bad-pos",
+      "type": "pulse",
+      "pos": { "x": 0.5, "y": 1 },
+      "rot": 0,
+      "params": {}
+    }
+  ],
+  "edges": []
+}
