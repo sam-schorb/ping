@@ -5,3 +5,6 @@ apps/web/public/dough/
 apps/web/playwright-report/
 apps/web/test-results/
 moduleSpecs/
+playwright.config.mjs
+/test-results/
+/packages/core/test/
