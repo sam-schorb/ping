@@ -208,7 +208,9 @@ export function hoverEquals(left, right) {
 
 export function isInteractiveTarget(target) {
   return Boolean(
-    target?.closest?.("[data-action], input, select, button, label, .ping-editor__menu, .ping-editor__group-dialog"),
+    target?.closest?.(
+      "[data-action], input, select, button, label, .ping-editor__menu, .ping-editor__group-dialog, .ping-editor__code-editor-overlay",
+    ),
   );
 }
 

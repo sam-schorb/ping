@@ -834,6 +834,9 @@ function renderNode(
   const rawCanvasLabel = node.name || definition.canvasLabel || rawLabel;
   const canvasLabel = escapeHtml(rawCanvasLabel);
   const labelVisible = shouldShowNodeLabel(screenBox, config, zoomMetrics);
+  const suppressFaceIdentifier = node.type === "code";
+  const renderFaceLabel = labelVisible && !suppressFaceIdentifier;
+  const renderFallbackIcon = !labelVisible && !suppressFaceIdentifier;
   const iconLayout = getNodeIconLayout(screenBox, config, zoomMetrics, labelVisible);
   const nodeCornerRadiusPx = Math.min(
     zoomMetrics.nodeCornerRadiusPx,
@@ -980,9 +983,8 @@ function renderNode(
           data-node-id="${escapeHtml(node.id)}"
         />
         ${
-          labelVisible
-            ? ""
-            : `
+          renderFallbackIcon
+            ? `
               <svg
                 x="${iconLayout.x}"
                 y="${iconLayout.y}"
@@ -995,9 +997,10 @@ function renderNode(
                 <path d="${icon.path}" fill="none" stroke="${nodeTheme.icon}" stroke-width="${zoomMetrics.iconStrokeWidthPx}" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             `
+            : ""
         }
         ${
-          labelVisible
+          renderFaceLabel
             ? `
               <text
                 class="ping-editor__node-label"

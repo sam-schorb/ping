@@ -4,6 +4,7 @@ import { mergeUIConfig } from "../config/defaults.js";
 import { DEFAULT_PALETTE_MENU_CATEGORY_ID } from "../panels/palette.js";
 import { getViewportSize } from "../render/panzoom.js";
 import { createCanvasController } from "./canvas-controller.js";
+import { createCodeNodeEditorController } from "./code-node-editor.js";
 import { focusElementWithoutScroll } from "./focus-state.js";
 import { clampCamera, clampParamInput, getNodeWorldBounds, snapWorldPoint } from "./geometry.js";
 import { createGroupDraft, createGroupEditDraft } from "./group-config.js";
@@ -69,11 +70,13 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     viewport: null,
     viewportCanvas: null,
     inlineParamLayer: null,
+    codeNodeEditLayer: null,
     snapshot: createEmptyGraphSnapshot(),
     routes: createEmptyRoutes(),
     diagnostics: [],
     localIssues: createEmptyNoticeList(),
     inspectDslDraft: null,
+    codeEditorDraft: null,
     palette: [],
     selection: createEmptySelection(),
     groupSelection: createEmptyGroupSelection(),
@@ -117,6 +120,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     previewRenderState: null,
     inlineParamEdit: null,
     inlineParamLayerDirty: false,
+    codeNodeEditLayerDirty: false,
     inlineParamBlurCommitTimer: null,
     inlineParamFocusFrameId: null,
     inlineParamAutofocusTimer: null,
@@ -152,12 +156,16 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     state.thumbOnlyDirty = false;
     state.viewportOnlyDirty = false;
     state.inlineParamLayerDirty = false;
+    state.codeNodeEditLayerDirty = false;
   }
 
-  function markViewportDirty({ inlineParamLayer = false } = {}) {
+  function markViewportDirty({ inlineParamLayer = false, codeNodeEditLayer = false } = {}) {
     if (state.dirty && !state.thumbOnlyDirty && !state.viewportOnlyDirty) {
       if (inlineParamLayer) {
         state.inlineParamLayerDirty = true;
+      }
+      if (codeNodeEditLayer) {
+        state.codeNodeEditLayerDirty = true;
       }
       return;
     }
@@ -167,6 +175,9 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     state.viewportOnlyDirty = true;
     if (inlineParamLayer) {
       state.inlineParamLayerDirty = true;
+    }
+    if (codeNodeEditLayer) {
+      state.codeNodeEditLayerDirty = true;
     }
   }
 
@@ -537,6 +548,15 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     markDirty,
     emitUndo,
     emitGraphOps,
+  });
+
+  const codeNodeEditorController = createCodeNodeEditorController({
+    state,
+    markDirty,
+    emitUndo,
+    emitGraphOps,
+    pushLocalIssue,
+    focusViewport,
   });
 
   const inlineParamController = createInlineParamController({
@@ -1096,6 +1116,10 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     handleApplyInspectDsl: inspectDslController.handleApplyInspectDsl,
     handleReloadInspectDsl: inspectDslController.handleReloadInspectDsl,
     handleJumpDocsCategory: inspectDslController.handleJumpDocsCategory,
+    openCodeEditor: codeNodeEditorController.openCodeEditor,
+    handleCodeEditorInput: codeNodeEditorController.handleCodeEditorInput,
+    cancelCodeEditor: codeNodeEditorController.cancelCodeEditor,
+    applyCodeEditor: codeNodeEditorController.applyCodeEditor,
     handleFileInputChange,
     getSelectedNodeIds,
     clearNodeSetSelection,
@@ -1201,6 +1225,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
     state.viewport = null;
     state.viewportCanvas = null;
     state.inlineParamLayer = null;
+    state.codeNodeEditLayer = null;
     state.touchPointers.clear();
     state.touchGesture = { kind: "none" };
   }
@@ -1240,6 +1265,7 @@ export function createEditor({ registry, runtime, onOutput, onSidebarAction, sid
       ) {
         state.groupDraft = null;
       }
+      codeNodeEditorController.clearMissingCodeEditorDraft();
       markDirty();
     },
     setRoutes(routes) {

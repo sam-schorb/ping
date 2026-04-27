@@ -7,12 +7,14 @@ import { TbMetronome } from "react-icons/tb";
 
 import {
   focusElementWithoutScroll,
+  readCodeEditorFocusState,
   readGroupDialogFocusState,
   readGroupDialogScrollTop,
   readMenuCategoriesScrollLeft,
   readMenuFocusState,
   readSidebarFocusState,
   readSidebarTabsScrollLeft,
+  restoreCodeEditorFocus,
   restoreGroupDialogFocus,
   restoreGroupDialogScrollTop,
   restoreMenuCategoriesScrollLeft,
@@ -31,6 +33,7 @@ import {
 } from "./styles.js";
 import { clearDeletedSelection } from "./state.js";
 import { BUILT_IN_SIDEBAR_TABS, escapeHtml, getNodePulseWindowTicks } from "./utils.js";
+import { renderCodeEditorModal, renderCodeNodeEditLayer } from "./code-node-editor.js";
 import { createPreviewRenderState, renderSvgMarkup, renderThumbLayerMarkup } from "../render/svg-layer.js";
 
 function getSelectedNodeCount(selection, groupSelection, snapshot) {
@@ -121,8 +124,10 @@ export function createRenderController({
   function buildViewportOverlayMarkup() {
     return `
       ${buildInlineParamLayerMarkup()}
+      ${renderCodeNodeEditLayer(state)}
       ${buildMenuMarkup(state)}
       ${renderGroupConfigPanel(state.groupDraft, { sidebarCollapsed: state.sidebarCollapsed })}
+      ${renderCodeEditorModal(state.codeEditorDraft)}
     `;
   }
 
@@ -146,6 +151,7 @@ export function createRenderController({
     state.menuCategoriesScrollLeft = readMenuCategoriesScrollLeft(state.root);
     state.groupDialogScrollTop = readGroupDialogScrollTop(state.root);
     const groupDialogFocusState = readGroupDialogFocusState(state.root);
+    const codeEditorFocusState = readCodeEditorFocusState(state.root);
     const menuFocusState = readMenuFocusState(state.root);
     const sidebarFocusState = readSidebarFocusState(state.root);
     const shouldRestoreViewportFocus = state.root.ownerDocument?.activeElement === state.viewport;
@@ -409,14 +415,23 @@ export function createRenderController({
     state.viewport = state.root.querySelector(".ping-editor__viewport");
     state.viewportCanvas = state.root.querySelector(".ping-editor__viewport-canvas");
     state.inlineParamLayer = state.root.querySelector(".ping-editor__inline-param-layer");
+    state.codeNodeEditLayer = state.root.querySelector(".ping-editor__code-node-edit-layer");
     restoreSidebarTabsScrollLeft(state.root, state.sidebarTabsScrollLeft);
     restoreMenuCategoriesScrollLeft(state.root, state.menuCategoriesScrollLeft);
     restoreGroupDialogScrollTop(state.root, state.groupDialogScrollTop);
     const restoredMenuFocus =
       state.menu.open && state.menu.focusSearch ? false : restoreMenuFocus(state.root, menuFocusState);
     const restoredGroupDialogFocus = restoreGroupDialogFocus(state.root, groupDialogFocusState);
+    const restoredCodeEditorFocus = restoreCodeEditorFocus(state.root, codeEditorFocusState);
+    if (state.codeEditorDraft?.open && state.codeEditorDraft.focusOnOpen && !restoredCodeEditorFocus) {
+      focusElementWithoutScroll(state.root.querySelector('[data-testid="code-editor-source"]'));
+      state.codeEditorDraft = {
+        ...state.codeEditorDraft,
+        focusOnOpen: false,
+      };
+    }
     const restoredSidebarFocus =
-      restoredMenuFocus || restoredGroupDialogFocus
+      restoredMenuFocus || restoredGroupDialogFocus || restoredCodeEditorFocus || state.codeEditorDraft?.open
         ? false
         : restoreSidebarFocus(state.root, sidebarFocusState);
     if (!restoredMenuFocus && state.menu.open && state.menu.focusSearch) {
@@ -444,6 +459,8 @@ export function createRenderController({
       shouldRestoreViewportFocus &&
       !restoredInlineParamFocus &&
       !restoredGroupDialogFocus &&
+      !restoredCodeEditorFocus &&
+      !state.codeEditorDraft?.open &&
       !restoredSidebarFocus &&
       !state.menu.open
     ) {
@@ -453,6 +470,7 @@ export function createRenderController({
     state.thumbOnlyDirty = false;
     state.viewportOnlyDirty = false;
     state.inlineParamLayerDirty = false;
+    state.codeNodeEditLayerDirty = false;
     state.rendering = false;
   }
 
@@ -468,6 +486,13 @@ export function createRenderController({
     state.selection = selection;
     state.viewport.style.cursor = getViewportCursor();
     state.viewportCanvas.innerHTML = buildViewportCanvasMarkup(selection);
+    if (state.codeNodeEditLayerDirty || !state.codeNodeEditLayer) {
+      state.codeNodeEditLayer = state.root.querySelector(".ping-editor__code-node-edit-layer");
+      if (state.codeNodeEditLayer) {
+        state.codeNodeEditLayer.outerHTML = renderCodeNodeEditLayer(state);
+        state.codeNodeEditLayer = state.root.querySelector(".ping-editor__code-node-edit-layer");
+      }
+    }
     let restoredInlineParamLayer = false;
     if (state.inlineParamLayerDirty || !state.inlineParamLayer) {
       state.inlineParamLayer = state.root.querySelector(".ping-editor__inline-param-layer");
@@ -486,6 +511,7 @@ export function createRenderController({
     state.thumbOnlyDirty = false;
     state.viewportOnlyDirty = false;
     state.inlineParamLayerDirty = false;
+    state.codeNodeEditLayerDirty = false;
     state.rendering = false;
   }
 

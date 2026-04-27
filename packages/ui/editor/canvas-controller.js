@@ -248,7 +248,7 @@ export function createCanvasController({
       currentDistance: metrics.distance,
     });
     state.suppressViewportClick = true;
-    markViewportDirty({ inlineParamLayer: true });
+    markViewportDirty({ inlineParamLayer: true, codeNodeEditLayer: true });
     return true;
   }
 
@@ -261,7 +261,7 @@ export function createCanvasController({
       currentScreen: { ...screenPoint },
       moved: false,
     });
-    markViewportDirty({ inlineParamLayer: true });
+    markViewportDirty({ inlineParamLayer: true, codeNodeEditLayer: true });
   }
 
   function getPortHitFromTarget(target) {
@@ -854,7 +854,7 @@ export function createCanvasController({
           currentMidpoint: metrics.midpoint,
           currentDistance: metrics.distance,
         });
-        markViewportDirty({ inlineParamLayer: true });
+        markViewportDirty({ inlineParamLayer: true, codeNodeEditLayer: true });
       }
       return;
     }
@@ -883,7 +883,7 @@ export function createCanvasController({
           state.viewport,
           state.config,
         );
-        markViewportDirty({ inlineParamLayer: true });
+        markViewportDirty({ inlineParamLayer: true, codeNodeEditLayer: true });
       }
       return;
     }
@@ -932,7 +932,7 @@ export function createCanvasController({
           currentPositions,
         };
         setNodePositionOverridesForIds(currentPositions);
-        markViewportDirty({ inlineParamLayer: true });
+        markViewportDirty({ inlineParamLayer: true, codeNodeEditLayer: true });
         return;
       }
     }
@@ -1041,7 +1041,7 @@ export function createCanvasController({
       if (wasPinchPointer) {
         setTouchGesture({ kind: "none" });
         state.suppressViewportClick = true;
-        markViewportDirty({ inlineParamLayer: true });
+        markViewportDirty({ inlineParamLayer: true, codeNodeEditLayer: true });
         return;
       }
 
@@ -1051,7 +1051,7 @@ export function createCanvasController({
         if (moved) {
           state.suppressViewportClick = true;
         }
-        markViewportDirty({ inlineParamLayer: true });
+        markViewportDirty({ inlineParamLayer: true, codeNodeEditLayer: true });
         return;
       }
     }
@@ -1127,20 +1127,20 @@ export function createCanvasController({
 
     if (state.touchGesture.kind === "pinch" && state.touchGesture.pointerIds.includes(event.pointerId)) {
       setTouchGesture({ kind: "none" });
-      markViewportDirty({ inlineParamLayer: true });
+      markViewportDirty({ inlineParamLayer: true, codeNodeEditLayer: true });
       return;
     }
 
     if (state.touchGesture.kind === "pan" && state.touchGesture.pointerId === event.pointerId) {
       setTouchGesture({ kind: "none" });
-      markViewportDirty({ inlineParamLayer: true });
+      markViewportDirty({ inlineParamLayer: true, codeNodeEditLayer: true });
       return;
     }
 
     if (state.drag.kind === "node") {
       clearNodePositionOverrides(state.drag.nodeIds);
       clearTransientStates();
-      markViewportDirty({ inlineParamLayer: true });
+      markViewportDirty({ inlineParamLayer: true, codeNodeEditLayer: true });
       return;
     }
 
@@ -1322,7 +1322,7 @@ export function createCanvasController({
       event.ctrlKey || event.metaKey
         ? applyWheelZoom(state.camera, event, state.viewport, state.config)
         : applyWheelPan(state.camera, event, state.viewport, state.config);
-    markViewportDirty({ inlineParamLayer: true });
+    markViewportDirty({ inlineParamLayer: true, codeNodeEditLayer: true });
   }
 
   function buildPreviewRouteForRender() {

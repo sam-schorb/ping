@@ -33,6 +33,14 @@ const SIDEBAR_FOCUS_ATTRIBUTE_NAMES = [
   "type",
 ];
 
+const CODE_EDITOR_FOCUS_ATTRIBUTE_NAMES = [
+  "data-action",
+  "data-node-id",
+  "data-testid",
+  "name",
+  "type",
+];
+
 export function readSidebarTabsScrollLeft(root) {
   return root?.querySelector?.(".ping-editor__tabs")?.scrollLeft ?? 0;
 }
@@ -167,4 +175,12 @@ export function readSidebarFocusState(root) {
 
 export function restoreSidebarFocus(root, focusState) {
   return restoreScopedFocus(root, ".ping-editor__sidebar-content", focusState);
+}
+
+export function readCodeEditorFocusState(root) {
+  return readScopedFocusState(root, ".ping-editor__code-editor-dialog", CODE_EDITOR_FOCUS_ATTRIBUTE_NAMES);
+}
+
+export function restoreCodeEditorFocus(root, focusState) {
+  return restoreScopedFocus(root, ".ping-editor__code-editor-dialog", focusState);
 }

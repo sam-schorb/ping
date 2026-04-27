@@ -42,6 +42,10 @@ export function createInputController({
   handleApplyInspectDsl,
   handleReloadInspectDsl,
   handleJumpDocsCategory,
+  openCodeEditor,
+  handleCodeEditorInput,
+  cancelCodeEditor,
+  applyCodeEditor,
   handleFileInputChange,
   getSelectedNodeIds,
   clearNodeSetSelection,
@@ -136,6 +140,28 @@ export function createInputController({
   }
 
   function handleKeyDown(event) {
+    if (state.codeEditorDraft?.open) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelCodeEditor();
+        return;
+      }
+
+      if (
+        event.target?.matches?.("[data-action='code-editor-source']") &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key === "Enter"
+      ) {
+        event.preventDefault();
+        applyCodeEditor();
+        return;
+      }
+
+      if (event.target?.closest?.(".ping-editor__code-editor-dialog")) {
+        return;
+      }
+    }
+
     if (
       state.menu.open &&
       event.target?.matches?.("[data-action='search-menu']") &&
@@ -277,6 +303,14 @@ export function createInputController({
   }
 
   function handleDocumentKeyDown(event) {
+    if (state.codeEditorDraft?.open) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelCodeEditor();
+      }
+      return;
+    }
+
     if (isTextInputTarget(event.target) || !isNodeMenuShortcut(event)) {
       return;
     }
@@ -559,6 +593,21 @@ export function createInputController({
       return true;
     }
 
+    if (action === "open-code-editor") {
+      openCodeEditor(target.getAttribute("data-node-id"));
+      return true;
+    }
+
+    if (action === "cancel-code-editor") {
+      cancelCodeEditor();
+      return true;
+    }
+
+    if (action === "apply-code-editor") {
+      applyCodeEditor();
+      return true;
+    }
+
     if (action === "focus-diagnostic") {
       const index = Number(target.getAttribute("data-issue-index"));
       const issue = [...state.localIssues, ...state.diagnostics][index];
@@ -699,6 +748,11 @@ export function createInputController({
       return;
     }
 
+    if (target.matches("[data-action='code-editor-source']")) {
+      handleCodeEditorInput(target.value);
+      return;
+    }
+
     if (target.matches("[data-action='group-name']") && state.groupDraft) {
       state.groupDraft = {
         ...state.groupDraft,
@@ -768,6 +822,14 @@ export function createInputController({
     ) {
       state.tempoPopoverOpen = false;
       markDirty();
+    }
+
+    if (
+      state.codeEditorDraft?.open &&
+      !event.target?.closest?.(".ping-editor__code-editor-dialog")
+    ) {
+      cancelCodeEditor({ restoreViewportFocus: false });
+      return;
     }
 
     if (handleActionClick(event.target.closest("[data-action]"))) {

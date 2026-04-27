@@ -1,9 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createCodeNodeGroupId } from "@ping/core";
+import {
+  createCodeNodeGroupId,
+  getLayout,
+  getNodeDefinition,
+  lowerGroupDsl,
+} from "@ping/core";
 
 import { createEditorHarness, setupDom } from "./helpers/harness.js";
+
+const DSL_REGISTRY = Object.freeze({
+  getNodeDefinition,
+  getLayout,
+});
+
+function stylePx(element, name) {
+  return Number.parseFloat(element.style[name] || "0");
+}
+
+function attrNumber(element, name) {
+  return Number.parseFloat(element.getAttribute(name) || "0");
+}
 
 test("phase 10 code node appears in the palette and creates a private backing group", async () => {
   const dom = setupDom();
@@ -81,6 +99,137 @@ test("phase 10 private code backing groups stay hidden from group-library UI", a
       harness.container.querySelector(`[data-testid="palette-menu-group-${privateGroupId}"]`),
       null,
     );
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("code node uses the edit button instead of a node face label", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness();
+    harness.applyOps([
+      {
+        type: "addNode",
+        payload: {
+          node: {
+            id: "node-code",
+            type: "code",
+            pos: { x: 4, y: 4 },
+            rot: 0,
+            params: {},
+          },
+        },
+      },
+    ]);
+    await harness.flush();
+
+    const node = harness.query("node-node-code");
+    const nodeRect = node.querySelector(".ping-editor__node");
+    const editButton = harness.query("code-node-edit-node-code");
+    const buttonWidth = stylePx(editButton, "width");
+    const buttonHeight = stylePx(editButton, "height");
+    const buttonCenterX = stylePx(editButton, "left") + buttonWidth / 2;
+    const buttonCenterY = stylePx(editButton, "top") + buttonHeight / 2;
+    const nodeX = attrNumber(nodeRect, "x");
+    const nodeY = attrNumber(nodeRect, "y");
+    const nodeWidth = attrNumber(nodeRect, "width");
+    const nodeHeight = attrNumber(nodeRect, "height");
+
+    assert.equal(node.querySelector(".ping-editor__node-label"), null);
+    assert.equal(node.querySelector(".ping-editor__node-icon"), null);
+    assert.equal(node.getAttribute("aria-label"), "Code");
+    assert.ok(editButton);
+    assert.equal(editButton.getAttribute("aria-label"), "Code DSL");
+    assert.ok(buttonWidth > buttonHeight);
+    assert.ok(buttonHeight >= 24);
+    assert.ok(Math.abs(buttonCenterX - (nodeX + nodeWidth / 2)) <= 1);
+    assert.ok(buttonCenterY > nodeY + nodeHeight * 0.45);
+    assert.ok(buttonCenterY < nodeY + nodeHeight * 0.6);
+
+    for (let index = 0; index < 5; index += 1) {
+      harness.query("editor-viewport").dispatchEvent(
+        new dom.window.WheelEvent("wheel", {
+          bubbles: true,
+          cancelable: true,
+          ctrlKey: true,
+          deltaY: 80,
+          clientX: 480,
+          clientY: 320,
+        }),
+      );
+      await harness.flush();
+    }
+
+    const zoomedButton = harness.query("code-node-edit-node-code");
+
+    assert.ok(zoomedButton);
+    assert.ok(stylePx(zoomedButton, "width") < buttonWidth);
+    assert.ok(stylePx(zoomedButton, "height") < buttonHeight);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("code node edit button survives pulse-only redraws so clicks are not dropped", async () => {
+  const dom = setupDom();
+
+  try {
+    let pulseProgress = null;
+    const runtime = {
+      getMetrics() {
+        return { lastTickProcessed: 1 };
+      },
+      getPresentedActivity() {
+        return {
+          thumbs: [],
+          nodePulseStates:
+            pulseProgress === null
+              ? []
+              : [
+                  {
+                    nodeId: "node-code",
+                    progress: pulseProgress,
+                    receivedTick: 1,
+                  },
+                ],
+        };
+      },
+      resetPulses() {},
+    };
+    const harness = createEditorHarness({ runtime });
+    harness.applyOps([
+      {
+        type: "addNode",
+        payload: {
+          node: {
+            id: "node-code",
+            type: "code",
+            pos: { x: 4, y: 4 },
+            rot: 0,
+            params: {},
+          },
+        },
+      },
+    ]);
+    await harness.flush();
+
+    const button = harness.query("code-node-edit-node-code");
+
+    pulseProgress = 0.45;
+    await harness.flush();
+
+    assert.equal(harness.query("code-node-edit-node-code"), button);
+
+    harness.click(button);
+    await harness.flush();
+
+    assert.ok(harness.query("code-editor-modal"));
 
     harness.unmount();
   } finally {
@@ -272,6 +421,254 @@ test("phase 13 code node canvas renders projected visible thumbs instead of raw 
 
     assert.ok(harness.query("thumb-0"));
     assert.equal(harness.query("thumb-0").getAttribute("data-testid"), "thumb-0");
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("code node opens a modal editor and cancel discards draft DSL", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness();
+    harness.applyOps([
+      {
+        type: "addNode",
+        payload: {
+          node: {
+            id: "node-code",
+            type: "code",
+            pos: { x: 4, y: 4 },
+            rot: 0,
+            params: {},
+          },
+        },
+      },
+    ]);
+    await harness.flush();
+
+    harness.click(harness.query("code-node-edit-node-code"));
+    await harness.flush();
+
+    const source = harness.query("code-editor-source");
+    source.value = "pulse(1).outlet(0)";
+    source.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await harness.flush();
+
+    harness.click(harness.container.querySelector('[data-action="cancel-code-editor"]'));
+    await harness.flush();
+
+    assert.equal(harness.query("code-editor-modal"), null);
+    assert.equal(harness.snapshot.groups[createCodeNodeGroupId("node-code")].dsl.source, "");
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("code node backdrop click cancels draft DSL", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness();
+    harness.applyOps([
+      {
+        type: "addNode",
+        payload: {
+          node: {
+            id: "node-code",
+            type: "code",
+            pos: { x: 4, y: 4 },
+            rot: 0,
+            params: {},
+          },
+        },
+      },
+    ]);
+    await harness.flush();
+
+    harness.click(harness.query("code-node-edit-node-code"));
+    await harness.flush();
+
+    const source = harness.query("code-editor-source");
+    source.value = "pulse(1).outlet(0)";
+    source.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await harness.flush();
+
+    harness.click(harness.query("code-editor-backdrop"));
+    await harness.flush();
+
+    assert.equal(harness.query("code-editor-modal"), null);
+    assert.equal(harness.snapshot.groups[createCodeNodeGroupId("node-code")].dsl.source, "");
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("code node OK applies valid DSL through the private backing group", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness();
+    harness.applyOps([
+      {
+        type: "addNode",
+        payload: {
+          node: {
+            id: "node-code",
+            type: "code",
+            pos: { x: 4, y: 4 },
+            rot: 0,
+            params: {},
+          },
+        },
+      },
+    ]);
+    await harness.flush();
+
+    harness.click(harness.query("code-node-edit-node-code"));
+    await harness.flush();
+
+    const source = harness.query("code-editor-source");
+    source.value = "pulse(1).outlet(0)";
+    source.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await harness.flush();
+
+    harness.click(harness.query("code-editor-apply"));
+    await harness.flush();
+
+    const group = harness.snapshot.groups[createCodeNodeGroupId("node-code")];
+
+    assert.equal(harness.query("code-editor-modal"), null);
+    assert.equal(group.dsl.source, "pulse(1).outlet(0)");
+    assert.equal(group.outputs.length, 1);
+    assert.ok(harness.query("port-node-code-out-0"));
+    assert.ok(
+      harness.outputs.some(
+        (output) =>
+          output.type === "graph/ops" &&
+          output.payload.reason === "edit code DSL" &&
+          output.payload.ops.some((op) => op.type === "updateGroup"),
+      ),
+    );
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("code node invalid DSL keeps the modal open and leaves the group unchanged", async () => {
+  const dom = setupDom();
+
+  try {
+    const harness = createEditorHarness();
+    harness.applyOps([
+      {
+        type: "addNode",
+        payload: {
+          node: {
+            id: "node-code",
+            type: "code",
+            pos: { x: 4, y: 4 },
+            rot: 0,
+            params: {},
+          },
+        },
+      },
+    ]);
+    await harness.flush();
+
+    harness.click(harness.query("code-node-edit-node-code"));
+    await harness.flush();
+
+    const outputCountBefore = harness.outputs.length;
+    const source = harness.query("code-editor-source");
+    source.value = "$1.every(2).outlet(0)";
+    source.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await harness.flush();
+
+    harness.click(harness.query("code-editor-apply"));
+    await harness.flush();
+
+    assert.ok(harness.query("code-editor-modal"));
+    assert.ok(harness.query("code-editor-issues"));
+    assert.equal(harness.snapshot.groups[createCodeNodeGroupId("node-code")].dsl.source, "");
+    assert.equal(harness.outputs.length, outputCountBefore);
+
+    harness.unmount();
+  } finally {
+    dom.cleanup();
+  }
+});
+
+test("code node rejects valid DSL that would invalidate existing external cables", async () => {
+  const dom = setupDom();
+
+  try {
+    const groupId = createCodeNodeGroupId("node-code");
+    const lowered = lowerGroupDsl("pulse(1).outlet(0)", DSL_REGISTRY, {
+      groupId,
+      groupName: "Code node-code",
+    });
+
+    assert.equal(lowered.ok, true);
+
+    const harness = createEditorHarness({
+      snapshot: {
+        nodes: [
+          {
+            id: "node-code",
+            type: "code",
+            groupRef: groupId,
+            pos: { x: 4, y: 4 },
+            rot: 0,
+            params: {},
+          },
+          {
+            id: "node-output",
+            type: "out",
+            pos: { x: 8, y: 4 },
+            rot: 0,
+            params: {},
+          },
+        ],
+        edges: [
+          {
+            id: "edge-visible",
+            from: { nodeId: "node-code", portSlot: 0 },
+            to: { nodeId: "node-output", portSlot: 0 },
+            manualCorners: [],
+          },
+        ],
+        groups: {
+          [groupId]: lowered.group,
+        },
+      },
+    });
+    await harness.flush();
+
+    harness.click(harness.query("code-node-edit-node-code"));
+    await harness.flush();
+
+    const outputCountBefore = harness.outputs.length;
+    const source = harness.query("code-editor-source");
+    source.value = "";
+    source.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await harness.flush();
+
+    harness.click(harness.query("code-editor-apply"));
+    await harness.flush();
+
+    assert.ok(harness.query("code-editor-modal"));
+    assert.ok(harness.query("code-editor-issues"));
+    assert.equal(harness.snapshot.groups[groupId].dsl.source, "pulse(1).outlet(0)");
+    assert.equal(harness.outputs.length, outputCountBefore);
 
     harness.unmount();
   } finally {
